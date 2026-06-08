@@ -1,0 +1,38 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/customer_service?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  redis:
+    host: localhost
+    port: 6379
+    timeout: 5000ms
+    lettuce:
+      pool:
+        max-active: 20
+        max-idle: 10
+        min-idle: 5
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.customerservice.model.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# Business config
+cs:
+  queue:
+    max-wait-seconds: 600          # Max queue wait before timeout (10 min)
+    position-broadcast-interval: 5  # Seconds between queue position broadcasts
+  session:
+    idle-timeout-seconds: 300       # Customer idle timeout (5 min)
+    max-per-agent: 5                # Default max concurrent sessions per agent
+  allocation:
+    retry-interval-seconds: 10     # Re-allocation check interval
+  message:
+    max-retry: 3                   # Max message delivery retries

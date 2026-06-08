@@ -1,0 +1,28 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:test_cs;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+    schema: classpath:schema-h2.sql
+  redis:
+    host: localhost
+    port: 6370
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.customerservice.model.entity
+  configuration:
+    map-underscore-to-camel-case: true
+
+cs:
+  queue:
+    max-wait-seconds: 60
+    position-broadcast-interval: 5
+  session:
+    idle-timeout-seconds: 30
+    max-per-agent: 5
+  allocation:
+    retry-interval-seconds: 5
+  message:
+    max-retry: 3

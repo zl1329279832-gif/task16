@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.customerservice.mapper.MessageMapper">
+
+    <resultMap id="messageMap" type="com.customerservice.model.entity.ChatMessage">
+        <id column="id" property="id"/>
+        <result column="message_uid" property="messageUid"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="sender_type" property="senderType"/>
+        <result column="sender_id" property="senderId"/>
+        <result column="content_type" property="contentType"/>
+        <result column="content" property="content"/>
+        <result column="status" property="status"/>
+        <result column="sequence_no" property="sequenceNo"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="messageMap">
+        SELECT * FROM cs_message WHERE id = #{id}
+    </select>
+
+    <select id="selectByMessageUid" resultMap="messageMap">
+        SELECT * FROM cs_message WHERE message_uid = #{messageUid}
+    </select>
+
+    <select id="selectBySessionId" resultMap="messageMap">
+        SELECT * FROM cs_message WHERE session_id = #{sessionId} ORDER BY sequence_no ASC
+    </select>
+
+    <select id="selectBySessionIdAfterSeq" resultMap="messageMap">
+        SELECT * FROM cs_message WHERE session_id = #{sessionId} AND sequence_no > #{afterSeq}
+        ORDER BY sequence_no ASC
+    </select>
+
+    <select id="selectMaxSequenceNo" resultType="java.lang.Long">
+        SELECT COALESCE(MAX(sequence_no), 0) FROM cs_message WHERE session_id = #{sessionId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO cs_message (message_uid, session_id, sender_type, sender_id,
+                                content_type, content, status, sequence_no)
+        VALUES (#{messageUid}, #{sessionId}, #{senderType}, #{senderId},
+                #{contentType}, #{content}, #{status}, #{sequenceNo})
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE cs_message SET status = #{status} WHERE id = #{id}
+    </update>
+</mapper>

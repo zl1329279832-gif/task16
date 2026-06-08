@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.customerservice.mapper.CustomerMapper">
+
+    <resultMap id="customerMap" type="com.customerservice.model.entity.Customer">
+        <id column="id" property="id"/>
+        <result column="customer_uid" property="customerUid"/>
+        <result column="name" property="name"/>
+        <result column="vip_level" property="vipLevel"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="customerMap">
+        SELECT * FROM cs_customer WHERE id = #{id}
+    </select>
+
+    <select id="selectByCustomerUid" resultMap="customerMap">
+        SELECT * FROM cs_customer WHERE customer_uid = #{customerUid}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO cs_customer (customer_uid, name, vip_level)
+        VALUES (#{customerUid}, #{name}, #{vipLevel})
+    </insert>
+
+    <update id="update">
+        UPDATE cs_customer SET name = #{name}, vip_level = #{vipLevel}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+</mapper>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.customerservice.mapper.QueueEntryMapper">
+
+    <resultMap id="queueEntryMap" type="com.customerservice.model.entity.QueueEntry">
+        <id column="id" property="id"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="customer_id" property="customerId"/>
+        <result column="skill_group_id" property="skillGroupId"/>
+        <result column="vip_level" property="vipLevel"/>
+        <result column="priority_score" property="priorityScore"/>
+        <result column="enqueue_at" property="enqueueAt"/>
+    </resultMap>
+
+    <select id="selectBySessionId" resultMap="queueEntryMap">
+        SELECT * FROM cs_queue_entry WHERE session_id = #{sessionId}
+    </select>
+
+    <select id="selectBySkillGroupOrderByPriority" resultMap="queueEntryMap">
+        SELECT * FROM cs_queue_entry
+        WHERE skill_group_id = #{skillGroupId}
+        ORDER BY priority_score DESC, enqueue_at ASC
+    </select>
+
+    <select id="selectAllOrderByPriority" resultMap="queueEntryMap">
+        SELECT * FROM cs_queue_entry ORDER BY priority_score DESC, enqueue_at ASC
+    </select>
+
+    <select id="countBySkillGroup" resultType="int">
+        SELECT COUNT(*) FROM cs_queue_entry WHERE skill_group_id = #{skillGroupId}
+    </select>
+
+    <select id="countAll" resultType="int">
+        SELECT COUNT(*) FROM cs_queue_entry
+    </select>
+
+    <select id="selectPosition" resultType="int">
+        SELECT COUNT(*) + 1 FROM cs_queue_entry q1
+        INNER JOIN cs_queue_entry q2 ON q2.session_id = #{sessionId}
+        WHERE (q1.priority_score > q2.priority_score)
+           OR (q1.priority_score = q2.priority_score AND q1.enqueue_at &lt; q2.enqueue_at)
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO cs_queue_entry (session_id, customer_id, skill_group_id, vip_level, priority_score, enqueue_at)
+        VALUES (#{sessionId}, #{customerId}, #{skillGroupId}, #{vipLevel}, #{priorityScore}, #{enqueueAt})
+    </insert>
+
+    <delete id="deleteBySessionId">
+        DELETE FROM cs_queue_entry WHERE session_id = #{sessionId}
+    </delete>
+</mapper>

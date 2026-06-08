@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.customerservice.mapper.SessionMapper">
+
+    <resultMap id="sessionMap" type="com.customerservice.model.entity.ChatSession">
+        <id column="id" property="id"/>
+        <result column="session_no" property="sessionNo"/>
+        <result column="customer_id" property="customerId"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="skill_group_id" property="skillGroupId"/>
+        <result column="status" property="status"/>
+        <result column="vip_level" property="vipLevel"/>
+        <result column="queue_start_at" property="queueStartAt"/>
+        <result column="assign_at" property="assignAt"/>
+        <result column="close_at" property="closeAt"/>
+        <result column="close_reason" property="closeReason"/>
+        <result column="last_active_at" property="lastActiveAt"/>
+        <result column="metadata" property="metadata"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="sessionMap">
+        SELECT * FROM cs_session WHERE id = #{id}
+    </select>
+
+    <select id="selectBySessionNo" resultMap="sessionMap">
+        SELECT * FROM cs_session WHERE session_no = #{sessionNo}
+    </select>
+
+    <select id="selectByAgentId" resultMap="sessionMap">
+        SELECT * FROM cs_session WHERE agent_id = #{agentId} ORDER BY created_at DESC
+    </select>
+
+    <select id="selectActiveByAgentId" resultMap="sessionMap">
+        SELECT * FROM cs_session WHERE agent_id = #{agentId} AND status IN ('ACTIVE', 'SUSPENDED')
+    </select>
+
+    <select id="selectByCustomerId" resultMap="sessionMap">
+        SELECT * FROM cs_session WHERE customer_id = #{customerId} ORDER BY created_at DESC
+    </select>
+
+    <select id="selectByStatus" resultMap="sessionMap">
+        SELECT * FROM cs_session WHERE status = #{status}
+    </select>
+
+    <select id="selectIdleSessions" resultMap="sessionMap">
+        SELECT * FROM cs_session
+        WHERE status = 'ACTIVE'
+          AND last_active_at &lt; DATE_SUB(NOW(), INTERVAL #{timeoutSeconds} SECOND)
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO cs_session (session_no, customer_id, agent_id, skill_group_id, status,
+                                vip_level, queue_start_at, last_active_at, metadata)
+        VALUES (#{sessionNo}, #{customerId}, #{agentId}, #{skillGroupId}, #{status},
+                #{vipLevel}, #{queueStartAt}, #{lastActiveAt}, #{metadata})
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE cs_session SET status = #{status}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateAgentAndStatus">
+        UPDATE cs_session SET agent_id = #{agentId}, status = #{status},
+                              assign_at = NOW(), updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateLastActiveAt">
+        UPDATE cs_session SET last_active_at = NOW(), updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="closeSession">
+        UPDATE cs_session SET status = 'CLOSED', close_at = NOW(),
+                              close_reason = #{closeReason}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+</mapper>

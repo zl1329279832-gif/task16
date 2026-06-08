@@ -1,0 +1,4 @@
+com\customerservice\InMemoryMessageQueueTest.class
+com\customerservice\MessageServiceTest.class
+com\customerservice\QueueServiceTest.class
+com\customerservice\AllocationServiceTest.class

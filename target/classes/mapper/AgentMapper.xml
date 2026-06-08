@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.customerservice.mapper.AgentMapper">
+
+    <resultMap id="agentMap" type="com.customerservice.model.entity.Agent">
+        <id column="id" property="id"/>
+        <result column="username" property="username"/>
+        <result column="display_name" property="displayName"/>
+        <result column="status" property="status"/>
+        <result column="max_concurrent" property="maxConcurrent"/>
+        <result column="current_load" property="currentLoad"/>
+        <result column="is_supervisor" property="isSupervisor"/>
+        <result column="last_online_at" property="lastOnlineAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="agentMap">
+        SELECT * FROM cs_agent WHERE id = #{id}
+    </select>
+
+    <select id="selectByUsername" resultMap="agentMap">
+        SELECT * FROM cs_agent WHERE username = #{username}
+    </select>
+
+    <select id="selectByStatus" resultMap="agentMap">
+        SELECT * FROM cs_agent WHERE status = #{status}
+    </select>
+
+    <select id="selectAvailableBySkillGroup" resultMap="agentMap">
+        SELECT a.* FROM cs_agent a
+        INNER JOIN cs_agent_skill ask ON a.id = ask.agent_id
+        WHERE ask.skill_group_id = #{skillGroupId}
+          AND a.status = 'ONLINE'
+          AND a.current_load &lt; a.max_concurrent
+        ORDER BY (a.max_concurrent - a.current_load) DESC, ask.proficiency DESC
+    </select>
+
+    <select id="selectAllOnline" resultMap="agentMap">
+        SELECT * FROM cs_agent WHERE status IN ('ONLINE', 'BUSY')
+    </select>
+
+    <update id="updateStatus">
+        UPDATE cs_agent SET status = #{status}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="incrementLoad">
+        UPDATE cs_agent SET current_load = current_load + 1, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="decrementLoad">
+        UPDATE cs_agent SET current_load = GREATEST(current_load - 1, 0), updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateMaxConcurrent">
+        UPDATE cs_agent SET max_concurrent = #{maxConcurrent}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateLastOnlineAt">
+        UPDATE cs_agent SET last_online_at = NOW(), updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO cs_agent (username, display_name, status, max_concurrent, current_load, is_supervisor)
+        VALUES (#{username}, #{displayName}, #{status}, #{maxConcurrent}, #{currentLoad}, #{isSupervisor})
+    </insert>
+</mapper>
