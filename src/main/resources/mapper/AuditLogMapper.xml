@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cs.alloc.mapper.AuditLogMapper">
+    <resultMap id="BaseResultMap" type="AuditLog">
+        <id column="id" property="id"/>
+        <result column="operator_id" property="operatorId"/>
+        <result column="operator_type" property="operatorType"/>
+        <result column="action" property="action"/>
+        <result column="target_type" property="targetType"/>
+        <result column="target_id" property="targetId"/>
+        <result column="detail" property="detail"/>
+        <result column="ip_address" property="ipAddress"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO audit_log (operator_id, operator_type, action, target_type, target_id, detail, ip_address)
+        VALUES (#{operatorId}, #{operatorType}, #{action}, #{targetType}, #{targetId}, #{detail}, #{ipAddress})
+    </insert>
+    <select id="selectByTarget" resultMap="BaseResultMap">
+        SELECT * FROM audit_log WHERE target_type = #{targetType} AND target_id = #{targetId}
+        ORDER BY created_at DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+</mapper>

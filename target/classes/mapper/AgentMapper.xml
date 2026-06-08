@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cs.alloc.mapper.AgentMapper">
+    <resultMap id="BaseResultMap" type="Agent">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="skill_group_id" property="skillGroupId"/>
+        <result column="max_capacity" property="maxCapacity"/>
+        <result column="is_supervisor" property="isSupervisor"/>
+        <result column="status" property="status"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+    <select id="selectById" resultMap="BaseResultMap">SELECT * FROM agent WHERE id = #{id}</select>
+    <select id="selectBySkillGroupId" resultMap="BaseResultMap">SELECT * FROM agent WHERE skill_group_id = #{skillGroupId} AND status = 'ONLINE'</select>
+    <select id="selectAllOnline" resultMap="BaseResultMap">SELECT * FROM agent WHERE status = 'ONLINE'</select>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO agent (name, skill_group_id, max_capacity, is_supervisor, status) VALUES (#{name}, #{skillGroupId}, #{maxCapacity}, #{isSupervisor}, #{status})
+    </insert>
+    <update id="updateStatus">UPDATE agent SET status = #{status} WHERE id = #{id}</update>
+</mapper>

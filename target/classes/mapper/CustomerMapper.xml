@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cs.alloc.mapper.CustomerMapper">
+    <resultMap id="BaseResultMap" type="Customer">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="vip_level" property="vipLevel"/>
+        <result column="source" property="source"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+    <select id="selectById" resultMap="BaseResultMap">SELECT * FROM customer WHERE id = #{id}</select>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO customer (name, vip_level, source) VALUES (#{name}, #{vipLevel}, #{source})
+    </insert>
+    <update id="update">UPDATE customer SET name=#{name}, vip_level=#{vipLevel}, source=#{source} WHERE id=#{id}</update>
+</mapper>

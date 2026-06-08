@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cs.alloc.mapper.AllocationLogMapper">
+    <resultMap id="BaseResultMap" type="AllocationLog">
+        <id column="id" property="id"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="action" property="action"/>
+        <result column="reason" property="reason"/>
+        <result column="score_detail" property="scoreDetail"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO allocation_log (session_id, agent_id, action, reason, score_detail)
+        VALUES (#{sessionId}, #{agentId}, #{action}, #{reason}, #{scoreDetail})
+    </insert>
+    <select id="selectBySessionId" resultMap="BaseResultMap">SELECT * FROM allocation_log WHERE session_id = #{sessionId} ORDER BY created_at ASC</select>
+</mapper>

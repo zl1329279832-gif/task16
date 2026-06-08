@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cs.alloc.mapper.AgentStateMapper">
+    <resultMap id="BaseResultMap" type="AgentState">
+        <id column="agent_id" property="agentId"/>
+        <result column="current_load" property="currentLoad"/>
+        <result column="last_heartbeat" property="lastHeartbeat"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+    <select id="selectByAgentId" resultMap="BaseResultMap">SELECT * FROM agent_state WHERE agent_id = #{agentId}</select>
+    <insert id="upsert">
+        INSERT INTO agent_state (agent_id, current_load, last_heartbeat) VALUES (#{agentId}, #{currentLoad}, #{lastHeartbeat})
+        ON DUPLICATE KEY UPDATE current_load = VALUES(current_load), last_heartbeat = VALUES(last_heartbeat)
+    </insert>
+    <update id="updateLoad">UPDATE agent_state SET current_load = #{currentLoad} WHERE agent_id = #{agentId}</update>
+</mapper>

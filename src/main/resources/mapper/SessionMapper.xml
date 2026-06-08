@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cs.alloc.mapper.SessionMapper">
+    <resultMap id="BaseResultMap" type="Session">
+        <id column="id" property="id"/>
+        <result column="session_no" property="sessionNo"/>
+        <result column="customer_id" property="customerId"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="skill_group_id" property="skillGroupId"/>
+        <result column="status" property="status"/>
+        <result column="transfer_from" property="transferFrom"/>
+        <result column="priority_score" property="priorityScore"/>
+        <result column="assigned_at" property="assignedAt"/>
+        <result column="closed_at" property="closedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+    <select id="selectById" resultMap="BaseResultMap">SELECT * FROM session WHERE id = #{id}</select>
+    <select id="selectBySessionNo" resultMap="BaseResultMap">SELECT * FROM session WHERE session_no = #{sessionNo}</select>
+    <select id="selectByAgentIdAndStatus" resultMap="BaseResultMap">SELECT * FROM session WHERE agent_id = #{agentId} AND status = #{status}</select>
+    <select id="selectByCustomerIdAndStatus" resultMap="BaseResultMap">SELECT * FROM session WHERE customer_id = #{customerId} AND status = #{status}</select>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO session (session_no, customer_id, agent_id, skill_group_id, status, transfer_from, priority_score)
+        VALUES (#{sessionNo}, #{customerId}, #{agentId}, #{skillGroupId}, #{status}, #{transferFrom}, #{priorityScore})
+    </insert>
+    <update id="updateStatus">UPDATE session SET status = #{status} WHERE id = #{id}</update>
+    <update id="assignAgent">UPDATE session SET agent_id = #{agentId}, status = #{status}, assigned_at = NOW() WHERE id = #{id}</update>
+    <update id="close">UPDATE session SET status = 'CLOSED', closed_at = NOW() WHERE id = #{id}</update>
+    <select id="countActiveByAgentId" resultType="int">SELECT COUNT(*) FROM session WHERE agent_id = #{agentId} AND status IN ('ASSIGNED', 'ACTIVE')</select>
+</mapper>

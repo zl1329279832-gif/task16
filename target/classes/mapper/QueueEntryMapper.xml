@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cs.alloc.mapper.QueueEntryMapper">
+    <resultMap id="BaseResultMap" type="QueueEntry">
+        <id column="id" property="id"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="customer_id" property="customerId"/>
+        <result column="skill_group_id" property="skillGroupId"/>
+        <result column="priority_score" property="priorityScore"/>
+        <result column="position" property="position"/>
+        <result column="joined_at" property="joinedAt"/>
+    </resultMap>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO queue_entry (session_id, customer_id, skill_group_id, priority_score, position)
+        VALUES (#{sessionId}, #{customerId}, #{skillGroupId}, #{priorityScore}, #{position})
+    </insert>
+    <select id="selectBySessionId" resultMap="BaseResultMap">SELECT * FROM queue_entry WHERE session_id = #{sessionId}</select>
+    <select id="selectBySkillGroupId" resultMap="BaseResultMap">SELECT * FROM queue_entry WHERE skill_group_id = #{skillGroupId} ORDER BY priority_score DESC, joined_at ASC</select>
+    <select id="selectAll" resultMap="BaseResultMap">SELECT * FROM queue_entry ORDER BY priority_score DESC, joined_at ASC</select>
+    <delete id="deleteBySessionId">DELETE FROM queue_entry WHERE session_id = #{sessionId}</delete>
+    <update id="updatePosition">UPDATE queue_entry SET position = #{position} WHERE session_id = #{sessionId}</update>
+    <update id="updatePriorityScore">UPDATE queue_entry SET priority_score = #{priorityScore} WHERE session_id = #{sessionId}</update>
+    <select id="countBySkillGroupId" resultType="int">SELECT COUNT(*) FROM queue_entry WHERE skill_group_id = #{skillGroupId}</select>
+</mapper>

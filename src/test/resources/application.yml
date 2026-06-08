@@ -1,0 +1,33 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=MYSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.cs.alloc.domain
+  configuration:
+    map-underscore-to-camel-case: true
+
+cs:
+  queue:
+    timeout-seconds: 1800
+    vip-weight: 10
+    wait-weight: 1
+  agent:
+    reconnect-grace-seconds: 30
+    heartbeat-interval: 10
+  session:
+    idle-timeout-seconds: 300
+  allocation:
+    interval-ms: 999999999
+    skill-match-score: 50
+    load-penalty: 10
+  mq:
+    type: memory

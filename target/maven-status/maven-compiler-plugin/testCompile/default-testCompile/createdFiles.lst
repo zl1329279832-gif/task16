@@ -1,0 +1,4 @@
+com\cs\alloc\service\AllocationEngineTest.class
+com\cs\alloc\service\MessageServiceTest.class
+com\cs\alloc\service\QueueServiceTest.class
+com\cs\alloc\service\SessionServiceTest.class

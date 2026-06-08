@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cs.alloc.mapper.MessageMapper">
+    <resultMap id="BaseResultMap" type="Message">
+        <id column="id" property="id"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="sender_id" property="senderId"/>
+        <result column="sender_type" property="senderType"/>
+        <result column="content" property="content"/>
+        <result column="msg_type" property="msgType"/>
+        <result column="idempotency_key" property="idempotencyKey"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO message (session_id, sender_id, sender_type, content, msg_type, idempotency_key)
+        VALUES (#{sessionId}, #{senderId}, #{senderType}, #{content}, #{msgType}, #{idempotencyKey})
+    </insert>
+    <select id="selectByIdempotencyKey" resultMap="BaseResultMap">SELECT * FROM message WHERE idempotency_key = #{idempotencyKey} LIMIT 1</select>
+    <select id="selectBySessionId" resultMap="BaseResultMap">SELECT * FROM message WHERE session_id = #{sessionId} ORDER BY created_at ASC LIMIT #{limit} OFFSET #{offset}</select>
+    <select id="countBySessionId" resultType="long">SELECT COUNT(*) FROM message WHERE session_id = #{sessionId}</select>
+</mapper>
