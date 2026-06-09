@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 import java.time.Duration;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -56,5 +57,36 @@ class MessageServiceTest {
         assertThatThrownBy(() -> svc.sendMessage(999L, "1", "CUSTOMER", "hi", "TEXT", null)).isInstanceOf(BizException.class);
     }
 
-    private Session activeSession() { Session s = new Session(); s.setId(1L); s.setSessionNo("CS1"); s.setStatus("ACTIVE"); s.setCustomerId(100L); s.setAgentId(10L); return s; }
+    // ========== 新增: Redis键过期但MySQL已写入的边界测试 ==========
+
+    @Test @DisplayName("幂等: Redis键过期但MySQL已写入, 返回已有消息")
+    void redisExpiredMysqlExists() {
+        when(sessionMapper.selectById(1L)).thenReturn(activeSession());
+        // Redis 幂等键已过期, SETNX 返回 true (当作新消息)
+        when(redisService.trySetIdempotencyKey(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+        Message existing = new Message(); existing.setId(888L); existing.setContent("hi");
+        // MySQL insert 因唯一键冲突抛异常
+        doThrow(new DuplicateKeyException("Duplicate entry 'expired-key' for key 'uk_idempotency'"))
+                .when(messageMapper).insert(any());
+        when(messageMapper.selectByIdempotencyKey("expired-key")).thenReturn(existing);
+        Message result = svc.sendMessage(1L, "100", "CUSTOMER", "hi", "TEXT", "expired-key");
+        assertThat(result.getId()).isEqualTo(888L); // 返回已有消息
+        // 验证重新设置了 Redis 幂等键 (调用了两次: 第一次成功但过期, 第二次兜底)
+        verify(redisService, atLeast(2)).trySetIdempotencyKey(eq("expired-key"), eq("expired-key"), any(Duration.class));
+    }
+
+    @Test @DisplayName("幂等: Redis键过期且MySQL也无记录, 正常插入")
+    void redisExpiredMysqlEmpty() {
+        when(sessionMapper.selectById(1L)).thenReturn(activeSession());
+        when(redisService.trySetIdempotencyKey(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+        // insert 成功, 不抛异常
+        Message result = svc.sendMessage(1L, "100", "CUSTOMER", "hi", "TEXT", "new-key");
+        assertThat(result.getContent()).isEqualTo("hi");
+        verify(messageMapper).insert(any());
+    }
+
+    private Session activeSession() {
+        Session s = new Session(); s.setId(1L); s.setSessionNo("CS1"); s.setStatus("ACTIVE");
+        s.setCustomerId(100L); s.setAgentId(10L); return s;
+    }
 }

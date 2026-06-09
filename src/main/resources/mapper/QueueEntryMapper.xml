@@ -14,6 +14,10 @@
         INSERT INTO queue_entry (session_id, customer_id, skill_group_id, priority_score, position)
         VALUES (#{sessionId}, #{customerId}, #{skillGroupId}, #{priorityScore}, #{position})
     </insert>
+    <insert id="insertIgnore" useGeneratedKeys="true" keyProperty="id">
+        INSERT IGNORE INTO queue_entry (session_id, customer_id, skill_group_id, priority_score, position)
+        VALUES (#{sessionId}, #{customerId}, #{skillGroupId}, #{priorityScore}, #{position})
+    </insert>
     <select id="selectBySessionId" resultMap="BaseResultMap">SELECT * FROM queue_entry WHERE session_id = #{sessionId}</select>
     <select id="selectBySkillGroupId" resultMap="BaseResultMap">SELECT * FROM queue_entry WHERE skill_group_id = #{skillGroupId} ORDER BY priority_score DESC, joined_at ASC</select>
     <select id="selectAll" resultMap="BaseResultMap">SELECT * FROM queue_entry ORDER BY priority_score DESC, joined_at ASC</select>

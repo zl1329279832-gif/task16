@@ -3,6 +3,7 @@ package com.cs.alloc.service;
 import com.cs.alloc.common.BizException;
 import com.cs.alloc.domain.*;
 import com.cs.alloc.mapper.*;
+import com.cs.alloc.ws.WsEventPusher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,24 +19,32 @@ class SessionServiceTest {
     @Mock private SessionMapper sessionMapper; @Mock private CustomerMapper customerMapper;
     @Mock private AgentMapper agentMapper; @Mock private AgentStateMapper agentStateMapper;
     @Mock private AllocationLogMapper allocationLogMapper; @Mock private AuditLogMapper auditLogMapper;
-    @Mock private QueueService queueService; @Mock private RedisService redisService; @Mock private MessageQueue messageQueue;
+    @Mock private QueueService queueService; @Mock private RedisService redisService;
+    @Mock private MessageQueue messageQueue; @Mock private WsEventPusher wsEventPusher;
     private SessionService svc;
 
     @BeforeEach void setUp() {
-        svc = new SessionService(sessionMapper, customerMapper, agentMapper, agentStateMapper, allocationLogMapper, auditLogMapper, queueService, redisService, messageQueue);
+        svc = new SessionService(sessionMapper, customerMapper, agentMapper, agentStateMapper,
+                allocationLogMapper, auditLogMapper, queueService, redisService, messageQueue, wsEventPusher);
     }
 
     @Test @DisplayName("创建会话: 正常入队")
     void createSession() {
+        when(redisService.tryLock(anyString(), any())).thenReturn("owner1");
         when(redisService.getCustomerSession(1L)).thenReturn(java.util.Optional.empty());
         when(customerMapper.selectById(1L)).thenReturn(customer(1L, 2));
+        // 模拟 MyBatis insert 后自动设置 ID
+        doAnswer(inv -> { Session s = inv.getArgument(0); s.setId(1L); return null; })
+                .when(sessionMapper).insert(any(Session.class));
         Session s = svc.createSession(1L, 1L);
         assertThat(s.getStatus()).isEqualTo("WAITING");
         verify(queueService).join(any(), eq(2));
+        verify(redisService).setCustomerSession(1L, 1L);
     }
 
     @Test @DisplayName("创建会话: 已有活跃会话拒绝")
     void createSessionReject() {
+        when(redisService.tryLock(anyString(), any())).thenReturn("owner1");
         when(redisService.getCustomerSession(1L)).thenReturn(java.util.Optional.of(999L));
         Session ex = new Session(); ex.setId(999L); ex.setStatus("ACTIVE"); ex.setSessionNo("CS123");
         when(sessionMapper.selectById(999L)).thenReturn(ex);
@@ -44,26 +53,27 @@ class SessionServiceTest {
 
     @Test @DisplayName("接入: 正常分配")
     void acceptSession() {
-        when(sessionMapper.selectById(1L))
-            .thenReturn(session(1L, "WAITING", 100L, null))
-            .thenReturn(session(1L, "ASSIGNED", 100L, 10L));
         when(agentMapper.selectById(10L)).thenReturn(agent(10L, false));
         when(redisService.hasCapacity(10L)).thenReturn(true);
-        when(redisService.tryLock(anyString(), any())).thenReturn(true);
+        when(redisService.tryLock(anyString(), any())).thenReturn("lock-owner");
+        when(sessionMapper.assignAgentIfWaiting(1L, 10L)).thenReturn(1);
+        when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ASSIGNED", 100L, 10L));
         when(redisService.getAgentLoad(10L)).thenReturn(1);
         svc.acceptSession(1L, 10L);
-        verify(sessionMapper).assignAgent(1L, 10L, "ASSIGNED");
+        verify(sessionMapper).assignAgentIfWaiting(1L, 10L);
     }
 
     @Test @DisplayName("接入: 非WAITING拒绝")
     void acceptReject() {
-        when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ACTIVE", 100L, 10L));
+        when(agentMapper.selectById(20L)).thenReturn(agent(20L, false));
+        when(redisService.hasCapacity(20L)).thenReturn(true);
+        when(redisService.tryLock(anyString(), any())).thenReturn("lock-owner");
+        when(sessionMapper.assignAgentIfWaiting(1L, 20L)).thenReturn(0); // 状态不是WAITING
         assertThatThrownBy(() -> svc.acceptSession(1L, 20L)).isInstanceOf(BizException.class);
     }
 
     @Test @DisplayName("接入: 满载拒绝")
     void acceptFull() {
-        when(sessionMapper.selectById(1L)).thenReturn(session(1L, "WAITING", 100L, null));
         when(agentMapper.selectById(10L)).thenReturn(agent(10L, false));
         when(redisService.hasCapacity(10L)).thenReturn(false);
         assertThatThrownBy(() -> svc.acceptSession(1L, 10L)).isInstanceOf(BizException.class);
@@ -73,8 +83,9 @@ class SessionServiceTest {
     void transferToAgent() {
         when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ACTIVE", 100L, 10L));
         when(agentMapper.selectById(20L)).thenReturn(agent(20L, false));
+        when(redisService.isAgentAvailable(20L)).thenReturn(true);
         when(redisService.hasCapacity(20L)).thenReturn(true);
-        when(redisService.tryLock(anyString(), any())).thenReturn(true);
+        when(redisService.tryLock(anyString(), any())).thenReturn("lock-owner");
         when(redisService.getAgentLoad(anyLong())).thenReturn(1);
         svc.transferSession(1L, 10L, 20L, null, "测试");
         verify(redisService).unbindSessionFromAgent(1L, 10L);
@@ -84,7 +95,7 @@ class SessionServiceTest {
     @Test @DisplayName("转接: 退回排队")
     void transferToQueue() {
         when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ACTIVE", 100L, 10L));
-        when(redisService.tryLock(anyString(), any())).thenReturn(true);
+        when(redisService.tryLock(anyString(), any())).thenReturn("lock-owner");
         when(redisService.getAgentLoad(anyLong())).thenReturn(0);
         svc.transferSession(1L, 10L, null, 2L, "测试");
         verify(queueService).rejoin(any());
@@ -101,7 +112,7 @@ class SessionServiceTest {
     void takeoverOk() {
         when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ACTIVE", 100L, 10L));
         when(agentMapper.selectById(4L)).thenReturn(agent(4L, true));
-        when(redisService.tryLock(anyString(), any())).thenReturn(true);
+        when(redisService.tryLock(anyString(), any())).thenReturn("lock-owner");
         when(redisService.getAgentLoad(anyLong())).thenReturn(1);
         svc.supervisorTakeover(1L, 4L);
         verify(allocationLogMapper).insert(argThat(l -> "TAKEOVER".equals(l.getAction())));
@@ -110,13 +121,85 @@ class SessionServiceTest {
     @Test @DisplayName("关闭会话")
     void closeSession() {
         when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ACTIVE", 100L, 10L));
-        when(redisService.tryLock(anyString(), any())).thenReturn(true);
+        when(redisService.tryLock(anyString(), any())).thenReturn("lock-owner");
         when(redisService.getAgentLoad(10L)).thenReturn(0);
         svc.closeSession(1L, "10", "AGENT", "完成");
         verify(sessionMapper).close(1L);
     }
 
-    private Customer customer(long id, int vip) { Customer c = new Customer(); c.setId(id); c.setVipLevel(vip); return c; }
-    private Agent agent(long id, boolean supervisor) { Agent a = new Agent(); a.setId(id); a.setSkillGroupId(1L); a.setMaxCapacity(5); a.setIsSupervisor(supervisor); a.setStatus("ONLINE"); return a; }
-    private Session session(long id, String status, long cid, Long aid) { Session s = new Session(); s.setId(id); s.setSessionNo("CS" + id); s.setCustomerId(cid); s.setAgentId(aid); s.setSkillGroupId(1L); s.setStatus(status); return s; }
+    // ========== 新增: 并发接入测试 ==========
+
+    @Test @DisplayName("并发接入: 两个客服抢同一会话, 只有一个成功")
+    void concurrentAcceptOnlyOneWins() {
+        when(agentMapper.selectById(10L)).thenReturn(agent(10L, false));
+        when(redisService.hasCapacity(10L)).thenReturn(true);
+        when(redisService.tryLock(anyString(), any())).thenReturn("owner1");
+        when(sessionMapper.assignAgentIfWaiting(1L, 10L)).thenReturn(1); // 成功
+        when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ASSIGNED", 100L, 10L));
+        when(redisService.getAgentLoad(10L)).thenReturn(1);
+        svc.acceptSession(1L, 10L);
+        verify(sessionMapper).assignAgentIfWaiting(1L, 10L);
+    }
+
+    @Test @DisplayName("并发接入: 会话已被接入, 第二个客服失败")
+    void concurrentAcceptSecondFails() {
+        when(agentMapper.selectById(20L)).thenReturn(agent(20L, false));
+        when(redisService.hasCapacity(20L)).thenReturn(true);
+        when(redisService.tryLock(anyString(), any())).thenReturn("owner2");
+        when(sessionMapper.assignAgentIfWaiting(1L, 20L)).thenReturn(0); // 失败: 已被别人接入
+        assertThatThrownBy(() -> svc.acceptSession(1L, 20L))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("已被其他客服接入");
+    }
+
+    // ========== 新增: 转接回滚测试 ==========
+
+    @Test @DisplayName("转接: 目标客服离线, 不释放原客服")
+    void transferToOfflineAgentRollback() {
+        when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ACTIVE", 100L, 10L));
+        when(agentMapper.selectById(20L)).thenReturn(agent(20L, false));
+        when(redisService.isAgentAvailable(20L)).thenReturn(false); // 目标不在线
+        when(redisService.tryLock(anyString(), any())).thenReturn("owner");
+        assertThatThrownBy(() -> svc.transferSession(1L, 10L, 20L, null, "测试"))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("不在线");
+        verify(sessionMapper, never()).updateStatus(eq(1L), eq("TRANSFERRING")); // 不应释放原客服
+    }
+
+    @Test @DisplayName("转接: 目标分配异常, 回滚到原客服")
+    void transferAssignFailRollback() {
+        when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ACTIVE", 100L, 10L));
+        when(agentMapper.selectById(20L)).thenReturn(agent(20L, false));
+        when(redisService.isAgentAvailable(20L)).thenReturn(true);
+        when(redisService.hasCapacity(20L)).thenReturn(true);
+        when(redisService.tryLock(anyString(), any())).thenReturn("owner");
+        when(redisService.getAgentLoad(anyLong())).thenReturn(0);
+        doThrow(new RuntimeException("DB error")).when(sessionMapper).assignAgent(1L, 20L, "ASSIGNED");
+        assertThatThrownBy(() -> svc.transferSession(1L, 10L, 20L, null, "测试"))
+                .isInstanceOf(BizException.class);
+        // 验证回滚: 恢复到原客服
+        verify(sessionMapper).assignAgent(1L, 10L, "ACTIVE");
+    }
+
+    // ========== 新增: createSession 并发防护测试 ==========
+
+    @Test @DisplayName("创建会话: 锁获取失败拒绝")
+    void createSessionLockFail() {
+        when(redisService.tryLock(anyString(), any())).thenReturn(null); // 锁被占用
+        assertThatThrownBy(() -> svc.createSession(1L, 1L))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("请勿重复操作");
+    }
+
+    private Customer customer(long id, int vip) {
+        Customer c = new Customer(); c.setId(id); c.setVipLevel(vip); return c;
+    }
+    private Agent agent(long id, boolean supervisor) {
+        Agent a = new Agent(); a.setId(id); a.setSkillGroupId(1L); a.setMaxCapacity(5);
+        a.setIsSupervisor(supervisor); a.setStatus("ONLINE"); return a;
+    }
+    private Session session(long id, String status, long cid, Long aid) {
+        Session s = new Session(); s.setId(id); s.setSessionNo("CS" + id); s.setCustomerId(cid);
+        s.setAgentId(aid); s.setSkillGroupId(1L); s.setStatus(status); return s;
+    }
 }

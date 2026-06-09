@@ -11,9 +11,12 @@ public interface SessionMapper {
     Session selectBySessionNo(@Param("sessionNo") String sessionNo);
     List<Session> selectByAgentIdAndStatus(@Param("agentId") Long agentId, @Param("status") String status);
     List<Session> selectByCustomerIdAndStatus(@Param("customerId") Long customerId, @Param("status") String status);
+    List<Session> selectStuckTransferring(@Param("olderThanMinutes") int olderThanMinutes);
     void insert(Session session);
     void updateStatus(@Param("id") Long id, @Param("status") String status);
     void assignAgent(@Param("id") Long id, @Param("agentId") Long agentId, @Param("status") String status);
+    int assignAgentIfWaiting(@Param("id") Long id, @Param("agentId") Long agentId);
+    void updateSkillGroupId(@Param("id") Long id, @Param("skillGroupId") Long skillGroupId);
     void close(@Param("id") Long id);
     int countActiveByAgentId(@Param("agentId") Long agentId);
 }

@@ -25,6 +25,15 @@
     </insert>
     <update id="updateStatus">UPDATE session SET status = #{status} WHERE id = #{id}</update>
     <update id="assignAgent">UPDATE session SET agent_id = #{agentId}, status = #{status}, assigned_at = NOW() WHERE id = #{id}</update>
+    <update id="assignAgentIfWaiting">
+        UPDATE session SET agent_id = #{agentId}, status = 'ASSIGNED', assigned_at = NOW()
+        WHERE id = #{id} AND status = 'WAITING'
+    </update>
+    <update id="updateSkillGroupId">UPDATE session SET skill_group_id = #{skillGroupId} WHERE id = #{id}</update>
     <update id="close">UPDATE session SET status = 'CLOSED', closed_at = NOW() WHERE id = #{id}</update>
     <select id="countActiveByAgentId" resultType="int">SELECT COUNT(*) FROM session WHERE agent_id = #{agentId} AND status IN ('ASSIGNED', 'ACTIVE')</select>
+    <select id="selectStuckTransferring" resultMap="BaseResultMap">
+        SELECT * FROM session WHERE status = 'TRANSFERRING'
+        AND updated_at &lt; DATE_SUB(NOW(), INTERVAL #{olderThanMinutes} MINUTE)
+    </select>
 </mapper>

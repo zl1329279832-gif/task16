@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -17,23 +18,44 @@ public class QueueService {
     private final QueueEntryMapper queueEntryMapper;
     private final RedisService redisService;
 
+    /**
+     * 入队: 三层防护 — Redis锁 → DB查重 → INSERT IGNORE。
+     * 重复入队不改变排队序号。
+     */
     @Transactional
     public QueueEntry join(Session session, int vipLevel) {
-        QueueEntry existing = queueEntryMapper.selectBySessionId(session.getId());
-        if (existing != null) return existing;
-        int priorityScore = calculatePriority(vipLevel, LocalDateTime.now());
-        int position = queueEntryMapper.countBySkillGroupId(session.getSkillGroupId()) + 1;
-        QueueEntry entry = new QueueEntry();
-        entry.setSessionId(session.getId());
-        entry.setCustomerId(session.getCustomerId());
-        entry.setSkillGroupId(session.getSkillGroupId());
-        entry.setPriorityScore(priorityScore);
-        entry.setPosition(position);
-        entry.setJoinedAt(LocalDateTime.now());
-        queueEntryMapper.insert(entry);
-        redisService.addToQueue(session.getSkillGroupId(), session.getId(), priorityScore);
-        log.info("客户入队: sessionId={}, position={}", session.getId(), position);
-        return entry;
+        String lockKey = "queue:session:" + session.getId();
+        String lockOwner = redisService.tryLock(lockKey, Duration.ofSeconds(5));
+        try {
+            // 锁内查重: 已在队列中则直接返回, 不改变位置或分数
+            QueueEntry existing = queueEntryMapper.selectBySessionId(session.getId());
+            if (existing != null) return existing;
+
+            int priorityScore = calculatePriority(vipLevel, LocalDateTime.now());
+            int position = queueEntryMapper.countBySkillGroupId(session.getSkillGroupId()) + 1;
+            QueueEntry entry = new QueueEntry();
+            entry.setSessionId(session.getId());
+            entry.setCustomerId(session.getCustomerId());
+            entry.setSkillGroupId(session.getSkillGroupId());
+            entry.setPriorityScore(priorityScore);
+            entry.setPosition(position);
+            entry.setJoinedAt(LocalDateTime.now());
+
+            // INSERT IGNORE: DB 层兜底, 防止并发穿透
+            int rows = queueEntryMapper.insertIgnore(entry);
+            if (rows == 0) {
+                // 唯一键冲突, 返回已有记录
+                return queueEntryMapper.selectBySessionId(session.getId());
+            }
+
+            redisService.addToQueue(session.getSkillGroupId(), session.getId(), priorityScore);
+            log.info("客户入队: sessionId={}, position={}", session.getId(), position);
+            return entry;
+        } finally {
+            if (lockOwner != null) {
+                redisService.unlock(lockKey, lockOwner);
+            }
+        }
     }
 
     @Transactional

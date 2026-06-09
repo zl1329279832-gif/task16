@@ -8,6 +8,7 @@ import java.util.List;
 @Mapper
 public interface QueueEntryMapper {
     void insert(QueueEntry entry);
+    int insertIgnore(QueueEntry entry);
     QueueEntry selectBySessionId(@Param("sessionId") Long sessionId);
     List<QueueEntry> selectBySkillGroupId(@Param("skillGroupId") Long skillGroupId);
     List<QueueEntry> selectAll();

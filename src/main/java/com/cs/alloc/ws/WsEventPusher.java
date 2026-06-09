@@ -4,6 +4,7 @@ import com.cs.alloc.service.MessageQueue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import java.io.IOException;
@@ -25,6 +26,24 @@ public class WsEventPusher {
     public void unregisterCustomer(String customerId, WebSocketSession session) {
         Set<WebSocketSession> set = customerSessions.get(customerId);
         if (set != null) set.remove(session);
+    }
+    /**
+     * 替换客户的 WS 连接 (处理页面刷新场景):
+     * 关闭旧连接, 绑定新连接, 保证同一客户只有一个活跃 WS。
+     */
+    public void replaceCustomerSession(String customerId, WebSocketSession newSession) {
+        Set<WebSocketSession> sessions = customerSessions.computeIfAbsent(customerId, k -> new CopyOnWriteArraySet<>());
+        for (WebSocketSession old : sessions) {
+            if (old.isOpen() && !old.getId().equals(newSession.getId())) {
+                try { old.close(CloseStatus.NORMAL); } catch (Exception ignored) {}
+            }
+        }
+        sessions.clear();
+        sessions.add(newSession);
+    }
+    public boolean isCustomerConnected(String customerId) {
+        Set<WebSocketSession> set = customerSessions.get(customerId);
+        return set != null && !set.isEmpty();
     }
     public void registerAgent(String agentId, WebSocketSession session) {
         agentSessions.computeIfAbsent(agentId, k -> new CopyOnWriteArraySet<>()).add(session);

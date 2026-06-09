@@ -2,12 +2,15 @@ package com.cs.alloc.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -161,12 +164,34 @@ public class RedisService {
         return val != null ? Optional.of(Instant.parse(val)) : Optional.empty();
     }
 
-    public boolean tryLock(String key, Duration ttl) {
-        Boolean result = redis.opsForValue().setIfAbsent(KEY_LOCK + key, "1", ttl);
-        return Boolean.TRUE.equals(result);
+    public boolean isHeartbeatAlive(long agentId) {
+        return Boolean.TRUE.equals(redis.hasKey(KEY_HEARTBEAT + agentId));
     }
 
-    public void unlock(String key) {
-        redis.delete(KEY_LOCK + key);
+    /**
+     * 尝试获取分布式锁, 返回 owner token (UUID)。
+     * 返回 null 表示锁已被其他持有者占用。
+     */
+    public String tryLock(String key, Duration ttl) {
+        String owner = UUID.randomUUID().toString();
+        Boolean result = redis.opsForValue().setIfAbsent(KEY_LOCK + key, owner, ttl);
+        return Boolean.TRUE.equals(result) ? owner : null;
+    }
+
+    private static final String UNLOCK_LUA =
+        "if redis.call('get', KEYS[1]) == ARGV[1] then " +
+        "  return redis.call('del', KEYS[1]) " +
+        "else " +
+        "  return 0 " +
+        "end";
+
+    /**
+     * 释放分布式锁, 只允许锁的持有者 (owner) 释放。
+     * 使用 Lua CAS 脚本防止误删其他持有者的锁。
+     */
+    public void unlock(String key, String owner) {
+        if (owner == null) return;
+        redis.execute(new DefaultRedisScript<>(UNLOCK_LUA, Long.class),
+                List.of(KEY_LOCK + key), owner);
     }
 }

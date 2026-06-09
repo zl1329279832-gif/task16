@@ -8,6 +8,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -29,7 +30,10 @@ public class AllocationEngine {
     @Value("${cs.allocation.load-penalty:10}")
     private int loadPenalty;
 
-    public AllocationEngine(QueueService queueService, AgentMapper agentMapper, AgentStateMapper agentStateMapper, SessionMapper sessionMapper, AllocationLogMapper allocationLogMapper, RedisService redisService, MessageQueue messageQueue) {
+    public AllocationEngine(QueueService queueService, AgentMapper agentMapper,
+                            AgentStateMapper agentStateMapper, SessionMapper sessionMapper,
+                            AllocationLogMapper allocationLogMapper, RedisService redisService,
+                            MessageQueue messageQueue) {
         this.queueService = queueService;
         this.agentMapper = agentMapper;
         this.agentStateMapper = agentStateMapper;
@@ -44,7 +48,8 @@ public class AllocationEngine {
         List<QueueEntry> allWaiting = queueService.getAllWaiting();
         if (allWaiting.isEmpty()) return;
 
-        Map<Long, List<QueueEntry>> byGroup = allWaiting.stream().collect(Collectors.groupingBy(QueueEntry::getSkillGroupId));
+        Map<Long, List<QueueEntry>> byGroup = allWaiting.stream()
+                .collect(Collectors.groupingBy(QueueEntry::getSkillGroupId));
 
         for (Map.Entry<Long, List<QueueEntry>> entry : byGroup.entrySet()) {
             long skillGroupId = entry.getKey();
@@ -73,6 +78,11 @@ public class AllocationEngine {
         for (Agent agent : onlineAgents) {
             if (!redisService.isAgentAvailable(agent.getId())) continue;
             if (!redisService.hasCapacity(agent.getId())) continue;
+            // 心跳一致性检查: 心跳过期且Redis状态非ONLINE则跳过
+            if (!redisService.isHeartbeatAlive(agent.getId())) {
+                log.debug("客服 {} 心跳已过期, 跳过本轮分配", agent.getId());
+                continue;
+            }
             AgentState state = agentStateMapper.selectByAgentId(agent.getId());
             int load = state != null ? state.getCurrentLoad() : 0;
             candidates.add(new AgentCandidate(agent, load));
@@ -105,26 +115,42 @@ public class AllocationEngine {
         return vipLevel * 10 + (int) waitSeconds;
     }
 
+    /**
+     * 分配会话: DB 分配 + Redis 绑定, Redis 绑定失败时回滚 DB。
+     */
     @Transactional
     void doAllocate(QueueEntry qe, AgentCandidate candidate) {
         long sessionId = qe.getSessionId();
         long agentId = candidate.agent.getId();
         String lockKey = "session:" + sessionId;
-        if (!redisService.tryLock(lockKey, java.time.Duration.ofSeconds(10))) {
+        String lockOwner = redisService.tryLock(lockKey, Duration.ofSeconds(10));
+        if (lockOwner == null) {
             log.warn("分配锁失败, sessionId={}", sessionId);
             return;
         }
         try {
             Session session = sessionMapper.selectById(sessionId);
             if (session == null || !"WAITING".equals(session.getStatus())) {
-                log.debug("会话状态不允许分配, sessionId={}, status={}", sessionId, session != null ? session.getStatus() : "null");
+                log.debug("会话状态不允许分配, sessionId={}, status={}",
+                        sessionId, session != null ? session.getStatus() : "null");
                 return;
             }
+
+            // DB 分配
             sessionMapper.assignAgent(sessionId, agentId, "ASSIGNED");
-            redisService.incrementAgentLoad(agentId);
-            redisService.bindSessionToAgent(sessionId, agentId);
-            agentStateMapper.updateLoad(agentId, redisService.getAgentLoad(agentId));
-            redisService.setCustomerSession(qe.getCustomerId(), sessionId);
+
+            // Redis 绑定: 失败时回滚 DB
+            try {
+                redisService.incrementAgentLoad(agentId);
+                redisService.bindSessionToAgent(sessionId, agentId);
+                agentStateMapper.updateLoad(agentId, redisService.getAgentLoad(agentId));
+                redisService.setCustomerSession(qe.getCustomerId(), sessionId);
+            } catch (Exception e) {
+                log.error("Redis绑定失败, 回滚DB分配: sessionId={}", sessionId, e);
+                sessionMapper.updateStatus(sessionId, "WAITING");
+                return;
+            }
+
             queueService.leave(sessionId);
 
             AllocationLog allocLog = new AllocationLog();
@@ -132,13 +158,17 @@ public class AllocationEngine {
             allocLog.setAgentId(agentId);
             allocLog.setAction("ALLOCATE");
             allocLog.setReason(String.format("技能组%d自动分配", qe.getSkillGroupId()));
-            allocLog.setScoreDetail(String.format("{\"agentLoad\":%d,\"agentCapacity\":%d}", candidate.currentLoad, candidate.agent.getMaxCapacity()));
+            allocLog.setScoreDetail(String.format(
+                    "{\"agentLoad\":%d,\"agentCapacity\":%d}",
+                    candidate.currentLoad, candidate.agent.getMaxCapacity()));
             allocationLogMapper.insert(allocLog);
 
-            messageQueue.publish(MessageQueue.Topics.SESSION_ALLOCATED, String.format("{\"sessionId\":%d,\"agentId\":%d,\"customerId\":%d,\"sessionNo\":\"%s\"}", sessionId, agentId, qe.getCustomerId(), session.getSessionNo()));
+            messageQueue.publish(MessageQueue.Topics.SESSION_ALLOCATED,
+                    String.format("{\"sessionId\":%d,\"agentId\":%d,\"customerId\":%d,\"sessionNo\":\"%s\"}",
+                            sessionId, agentId, qe.getCustomerId(), session.getSessionNo()));
             log.info("分配成功: session={} -> agent={}", sessionId, agentId);
         } finally {
-            redisService.unlock(lockKey);
+            redisService.unlock(lockKey, lockOwner);
         }
     }
 
@@ -179,6 +209,9 @@ public class AllocationEngine {
     static class AgentCandidate {
         final Agent agent;
         final int currentLoad;
-        AgentCandidate(Agent agent, int currentLoad) { this.agent = agent; this.currentLoad = currentLoad; }
+        AgentCandidate(Agent agent, int currentLoad) {
+            this.agent = agent;
+            this.currentLoad = currentLoad;
+        }
     }
 }
