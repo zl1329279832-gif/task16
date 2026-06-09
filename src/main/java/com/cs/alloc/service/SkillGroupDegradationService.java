@@ -3,9 +3,11 @@ package com.cs.alloc.service;
 import com.cs.alloc.config.SlaRiskProperties;
 import com.cs.alloc.domain.AuditLog;
 import com.cs.alloc.domain.QueueEntry;
+import com.cs.alloc.domain.Session;
 import com.cs.alloc.mapper.AgentMapper;
 import com.cs.alloc.mapper.AuditLogMapper;
 import com.cs.alloc.mapper.QueueEntryMapper;
+import com.cs.alloc.mapper.SessionMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,7 @@ public class SkillGroupDegradationService {
     private final RedisService redisService;
     private final MessageQueue messageQueue;
     private final SlaRiskProperties properties;
+    private final SessionMapper sessionMapper;
 
     /**
      * 记录每个技能组开始无可用客服的时间戳。
@@ -61,14 +64,14 @@ public class SkillGroupDegradationService {
             return false;
         }
 
-        // Trigger degradation
-        List<QueueEntry> entries = queueEntryMapper.selectBySkillGroupId(skillGroupId);
+        // Trigger degradation — only migrate WAITING sessions
+        List<QueueEntry> entries = queueEntryMapper.selectWaitingBySkillGroupId(skillGroupId);
         if (entries.isEmpty()) {
-            log.debug("技能组 {} 队列为空, 无需降级迁移", skillGroupId);
+            log.debug("技能组 {} 无WAITING会话, 无需降级迁移", skillGroupId);
             return false;
         }
 
-        int migrated = queueEntryMapper.batchUpdateSkillGroup(skillGroupId, fallbackId);
+        int migrated = queueEntryMapper.batchUpdateSkillGroupWaiting(skillGroupId, fallbackId);
         for (QueueEntry entry : entries) {
             redisService.removeFromQueue(skillGroupId, entry.getSessionId());
             redisService.addToQueue(fallbackId, entry.getSessionId(),
@@ -92,7 +95,8 @@ public class SkillGroupDegradationService {
     }
 
     /**
-     * 恢复降级: 将之前迁移的会话迁回原技能组。
+     * 恢复降级: 将之前迁移的 WAITING 会话迁回原技能组。
+     * 跳过已变为 ASSIGNED/ACTIVE 等非 WAITING 状态的会话。
      */
     @Transactional
     public boolean restore(long skillGroupId) {
@@ -105,7 +109,14 @@ public class SkillGroupDegradationService {
         // Find the skill group they were migrated to
         long currentSkillGroupId = migratedEntries.get(0).getSkillGroupId();
         int restored = 0;
+        int skipped = 0;
         for (QueueEntry entry : migratedEntries) {
+            // Only restore WAITING sessions
+            Session session = sessionMapper.selectById(entry.getSessionId());
+            if (session == null || !"WAITING".equals(session.getStatus())) {
+                skipped++;
+                continue;
+            }
             queueEntryMapper.updateSkillGroupId(entry.getSessionId(), skillGroupId, null);
             redisService.removeFromQueue(currentSkillGroupId, entry.getSessionId());
             redisService.addToQueue(skillGroupId, entry.getSessionId(),
@@ -119,9 +130,9 @@ public class SkillGroupDegradationService {
 
         audit("SYSTEM", "SYSTEM", "SKILL_GROUP_RESTORE", "SKILL_GROUP",
                 String.valueOf(skillGroupId),
-                String.format("技能组%d恢复, 迁回%d个会话", skillGroupId, restored));
+                String.format("技能组%d恢复, 迁回%d个WAITING会话, 跳过%d个非WAITING会话", skillGroupId, restored, skipped));
 
-        log.info("技能组 {} 恢复, 迁回 {} 个会话", skillGroupId, restored);
+        log.info("技能组 {} 恢复, 迁回 {} 个WAITING会话, 跳过 {} 个非WAITING", skillGroupId, restored, skipped);
         return true;
     }
 

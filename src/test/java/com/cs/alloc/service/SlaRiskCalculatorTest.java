@@ -115,11 +115,11 @@ class SlaRiskCalculatorTest {
         assertThat(risk.getPinned()).isTrue();
     }
 
-    @Test @DisplayName("批量计算技能组风险评分")
+    @Test @DisplayName("批量计算技能组风险评分 — 仅WAITING会话")
     void batchCalculate() {
         QueueEntry e1 = qe(1L, 1L, 100L);
         QueueEntry e2 = qe(2L, 1L, 200L);
-        when(queueEntryMapper.selectBySkillGroupId(1L)).thenReturn(List.of(e1, e2));
+        when(queueEntryMapper.selectWaitingBySkillGroupId(1L)).thenReturn(List.of(e1, e2));
         when(customerMapper.selectById(100L)).thenReturn(customer(100L, 0));
         when(customerMapper.selectById(200L)).thenReturn(customer(200L, 2));
         when(agentMapper.selectBySkillGroupId(anyLong())).thenReturn(Collections.emptyList());

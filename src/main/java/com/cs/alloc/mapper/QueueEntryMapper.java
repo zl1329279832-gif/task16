@@ -20,4 +20,14 @@ public interface QueueEntryMapper {
     void updateSkillGroupId(@Param("sessionId") Long sessionId, @Param("skillGroupId") Long skillGroupId, @Param("originalSkillGroupId") Long originalSkillGroupId);
     int batchUpdateSkillGroup(@Param("oldSkillGroupId") Long oldSkillGroupId, @Param("newSkillGroupId") Long newSkillGroupId);
     List<QueueEntry> selectByOriginalSkillGroupId(@Param("originalSkillGroupId") Long originalSkillGroupId);
+
+    /**
+     * 只查询关联 session 状态为 WAITING 的排队条目 (JOIN session)。
+     */
+    List<QueueEntry> selectWaitingBySkillGroupId(@Param("skillGroupId") Long skillGroupId);
+
+    /**
+     * 只批量更新关联 session 状态为 WAITING 的条目的技能组。
+     */
+    int batchUpdateSkillGroupWaiting(@Param("oldSkillGroupId") Long oldSkillGroupId, @Param("newSkillGroupId") Long newSkillGroupId);
 }

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="com.cs.alloc.service.QueueServiceTest" time="0.051" tests="9" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="com.cs.alloc.ws.WsEventPusherTest" time="0.033" tests="8" errors="0" skipped="0" failures="0">
   <properties>
     <property name="java.specification.version" value="17"/>
     <property name="sun.cpu.isalist" value="amd64"/>
@@ -58,16 +58,54 @@
     <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
     <property name="java.class.version" value="61.0"/>
   </properties>
-  <testcase name="duplicateJoinPreservesPosition" classname="com.cs.alloc.service.QueueServiceTest" time="0.004"/>
-  <testcase name="joinLockFailButEntryExists" classname="com.cs.alloc.service.QueueServiceTest" time="0.006"/>
-  <testcase name="rejoin" classname="com.cs.alloc.service.QueueServiceTest" time="0.003"/>
-  <testcase name="joinIdempotent" classname="com.cs.alloc.service.QueueServiceTest" time="0.003"/>
-  <testcase name="join" classname="com.cs.alloc.service.QueueServiceTest" time="0.004">
-    <system-out><![CDATA[00:05:20.323 [main] INFO com.cs.alloc.service.QueueService -- 客户入队: sessionId=1, position=3
+  <testcase name="replaceCustomerSessionClosesOld" classname="com.cs.alloc.ws.WsEventPusherTest" time="0.006"/>
+  <testcase name="disconnectedAgentNoPush" classname="com.cs.alloc.ws.WsEventPusherTest" time="0.002"/>
+  <testcase name="slaRiskPushContainsSeqAndData" classname="com.cs.alloc.ws.WsEventPusherTest" time="0.004"/>
+  <testcase name="mqBridgeQueueReorderedPassthrough" classname="com.cs.alloc.ws.WsEventPusherTest" time="0.005">
+    <system-out><![CDATA[00:05:21.346 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=session.allocated
+00:05:21.346 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=session.transferred
+00:05:21.346 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=session.closed
+00:05:21.346 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=chat.message
+00:05:21.347 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=agent.status
+00:05:21.347 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=queue.updated
+00:05:21.347 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=system.notice
+00:05:21.347 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=sla.risk.updated
+00:05:21.347 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=queue.reordered
+00:05:21.347 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=skillgroup.degraded
+00:05:21.347 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=skillgroup.restored
+00:05:21.348 [main] INFO com.cs.alloc.ws.WsEventPusher -- MQ → WebSocket 事件桥接初始化完成
 ]]></system-out>
   </testcase>
-  <testcase name="leave" classname="com.cs.alloc.service.QueueServiceTest" time="0.006"/>
-  <testcase name="concurrentJoinInsertIgnoreFallback" classname="com.cs.alloc.service.QueueServiceTest" time="0.005"/>
-  <testcase name="position" classname="com.cs.alloc.service.QueueServiceTest" time="0.01"/>
-  <testcase name="leaveNotInQueue" classname="com.cs.alloc.service.QueueServiceTest" time="0.003"/>
+  <testcase name="mqBridgeSlaRiskUpdatedPassthrough" classname="com.cs.alloc.ws.WsEventPusherTest" time="0.002">
+    <system-out><![CDATA[00:05:21.350 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=session.allocated
+00:05:21.351 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=session.transferred
+00:05:21.351 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=session.closed
+00:05:21.351 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=chat.message
+00:05:21.351 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=agent.status
+00:05:21.351 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=queue.updated
+00:05:21.351 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=system.notice
+00:05:21.351 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=sla.risk.updated
+00:05:21.351 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=queue.reordered
+00:05:21.351 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=skillgroup.degraded
+00:05:21.351 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=skillgroup.restored
+00:05:21.351 [main] INFO com.cs.alloc.ws.WsEventPusher -- MQ → WebSocket 事件桥接初始化完成
+]]></system-out>
+  </testcase>
+  <testcase name="pushSeqIncrementing" classname="com.cs.alloc.ws.WsEventPusherTest" time="0.002"/>
+  <testcase name="mqBridgeDegradationPassthrough" classname="com.cs.alloc.ws.WsEventPusherTest" time="0.004">
+    <system-out><![CDATA[00:05:21.356 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=session.allocated
+00:05:21.356 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=session.transferred
+00:05:21.357 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=session.closed
+00:05:21.357 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=chat.message
+00:05:21.357 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=agent.status
+00:05:21.357 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=queue.updated
+00:05:21.357 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=system.notice
+00:05:21.357 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=sla.risk.updated
+00:05:21.357 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=queue.reordered
+00:05:21.357 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=skillgroup.degraded
+00:05:21.357 [main] INFO com.cs.alloc.service.InMemoryMessageQueue -- [MQ-MEM] subscribed to topic=skillgroup.restored
+00:05:21.357 [main] INFO com.cs.alloc.ws.WsEventPusher -- MQ → WebSocket 事件桥接初始化完成
+]]></system-out>
+  </testcase>
+  <testcase name="unregisteredAgentNoPush" classname="com.cs.alloc.ws.WsEventPusherTest" time="0.001"/>
 </testsuite>

@@ -8,10 +8,12 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 @Component
@@ -19,6 +21,10 @@ public class WsEventPusher {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private final Map<String, Set<WebSocketSession>> customerSessions = new ConcurrentHashMap<>();
     private final Map<String, Set<WebSocketSession>> agentSessions = new ConcurrentHashMap<>();
+    /**
+     * 递增序列号: 客户端可通过 seq 检测消息丢失或乱序。
+     */
+    private final AtomicLong pushSeq = new AtomicLong(0);
 
     public void registerCustomer(String customerId, WebSocketSession session) {
         customerSessions.computeIfAbsent(customerId, k -> new CopyOnWriteArraySet<>()).add(session);
@@ -85,7 +91,14 @@ public class WsEventPusher {
     }
 
     private String buildMessage(String event, Map<String, Object> data) {
-        try { return MAPPER.writeValueAsString(Map.of("event", event, "data", data, "timestamp", System.currentTimeMillis())); }
+        try {
+            Map<String, Object> msg = new LinkedHashMap<>();
+            msg.put("event", event);
+            msg.put("data", data);
+            msg.put("seq", pushSeq.incrementAndGet());
+            msg.put("timestamp", System.currentTimeMillis());
+            return MAPPER.writeValueAsString(msg);
+        }
         catch (Exception e) { log.error("构建WS消息失败", e); return "{}"; }
     }
     private void sendText(WebSocketSession ws, String text) {

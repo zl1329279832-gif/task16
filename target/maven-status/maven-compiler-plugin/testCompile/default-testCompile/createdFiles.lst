@@ -1,11 +1,12 @@
 com\cs\alloc\service\SessionServiceTest.class
 com\cs\alloc\service\SlaRiskCalculatorTest.class
 com\cs\alloc\service\QueueReorderServiceTest.class
-com\cs\alloc\ws\AgentWebSocketHandlerTest.class
 com\cs\alloc\service\AllocationEngineTest.class
+com\cs\alloc\service\QueueSnapshotServiceTest.class
+com\cs\alloc\service\QueueServiceTest.class
+com\cs\alloc\ws\WsEventPusherTest.class
+com\cs\alloc\service\SlaRiskEngineTest.class
+com\cs\alloc\ws\AgentWebSocketHandlerTest.class
 com\cs\alloc\service\MessageServiceTest.class
 com\cs\alloc\service\SkillGroupDegradationServiceTest.class
-com\cs\alloc\service\QueueSnapshotServiceTest.class
 com\cs\alloc\service\SlaRiskIntegrationTest.class
-com\cs\alloc\service\QueueServiceTest.class
-com\cs\alloc\service\SlaRiskEngineTest.class

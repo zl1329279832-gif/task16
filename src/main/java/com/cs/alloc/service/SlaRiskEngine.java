@@ -13,6 +13,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -36,11 +37,12 @@ public class SlaRiskEngine {
     /**
      * SLA 风险引擎主循环:
      * 1. 遍历所有活跃技能组
-     * 2. 计算风险评分
-     * 3. 超过阈值则重排队列
-     * 4. 检查降级条件
-     * 5. 定期保存快照
-     * 6. 推送风险变化到 WebSocket
+     * 2. 计算风险评分 (仅 WAITING 会话)
+     * 3. 先落库 risk history (保证数据一致)
+     * 4. 超过阈值则重排队列
+     * 5. 检查降级条件
+     * 6. 定期保存快照
+     * 7. 最后统一推送风险更新事件 (保证 WS 推送时 history 已落库)
      */
     @Scheduled(fixedDelayString = "${cs.sla.interval-ms:5000}")
     public void runSlaCycle() {
@@ -48,26 +50,29 @@ public class SlaRiskEngine {
         if (groups.isEmpty()) return;
 
         boolean hasCritical = false;
+        // Collect risk summaries for WS push consistency
+        List<Map<String, Object>> riskSummaries = new ArrayList<>();
 
         for (SkillGroup group : groups) {
             long groupId = group.getId();
             try {
-                // 1. Calculate risk scores
+                // 1. Calculate risk scores (only WAITING sessions)
                 Map<Long, SlaRiskScore> riskScores = slaRiskCalculator.calculateSkillGroupRisks(groupId);
                 if (riskScores.isEmpty()) continue;
 
                 // 2. Check if any session exceeds threshold
-                boolean highRisk = riskScores.values().stream()
-                        .anyMatch(r -> r.getRiskScore() != Double.MAX_VALUE
-                                && r.getRiskScore() >= properties.getRiskThreshold());
-
-                // 3. Reorder if high risk
-                if (highRisk) {
-                    queueReorderService.reorderQueueByRisk(groupId);
-                    hasCritical = true;
+                double maxRisk = 0;
+                int sessionCount = 0;
+                double totalRisk = 0;
+                for (SlaRiskScore risk : riskScores.values()) {
+                    if (risk.getRiskScore() == Double.MAX_VALUE) continue; // skip pinned
+                    sessionCount++;
+                    totalRisk += risk.getRiskScore();
+                    if (risk.getRiskScore() > maxRisk) maxRisk = risk.getRiskScore();
                 }
+                boolean highRisk = maxRisk >= properties.getRiskThreshold();
 
-                // 4. Save risk history
+                // 3. Save risk history FIRST (before events) to ensure DB consistency
                 for (SlaRiskScore risk : riskScores.values()) {
                     if (risk.getRiskScore() == Double.MAX_VALUE) continue; // skip pinned
                     SlaRiskHistory history = new SlaRiskHistory();
@@ -82,8 +87,23 @@ public class SlaRiskEngine {
                     slaRiskHistoryMapper.insert(history);
                 }
 
+                // 4. Reorder if high risk (after history is persisted)
+                if (highRisk) {
+                    queueReorderService.reorderQueueByRisk(groupId);
+                    hasCritical = true;
+                }
+
                 // 5. Check degradation
                 degradationService.checkAndDegrade(groupId);
+
+                // Collect summary for unified WS push
+                double avgRisk = sessionCount > 0 ? totalRisk / sessionCount : 0;
+                riskSummaries.add(Map.of(
+                        "skillGroupId", groupId,
+                        "maxRisk", maxRisk,
+                        "avgRisk", Math.round(avgRisk * 100.0) / 100.0,
+                        "sessionCount", sessionCount
+                ));
 
             } catch (Exception e) {
                 log.error("SLA引擎处理技能组 {} 异常", groupId, e);
@@ -104,13 +124,20 @@ public class SlaRiskEngine {
             lastSnapshotTime = now;
         }
 
-        // 7. Push risk updates via MQ -> WebSocket
-        if (hasCritical) {
-            messageQueue.publish(MessageQueue.Topics.SLA_RISK_UPDATED,
-                    String.format("{\"criticalAlert\":true,\"timestamp\":%d}", System.currentTimeMillis()));
-        } else {
-            messageQueue.publish(MessageQueue.Topics.SLA_RISK_UPDATED,
-                    String.format("{\"criticalAlert\":false,\"timestamp\":%d}", System.currentTimeMillis()));
+        // 7. Unified risk update push (after all DB writes complete)
+        //    Includes risk summaries so WS clients can correlate with persisted history
+        messageQueue.publish(MessageQueue.Topics.SLA_RISK_UPDATED,
+                String.format("{\"criticalAlert\":%b,\"timestamp\":%d,\"riskSummaries\":%s}",
+                        hasCritical, System.currentTimeMillis(), toJson(riskSummaries)));
+    }
+
+    private String toJson(List<Map<String, Object>> summaries) {
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            return mapper.writeValueAsString(summaries);
+        } catch (Exception e) {
+            log.error("序列化风险摘要失败", e);
+            return "[]";
         }
     }
 }

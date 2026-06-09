@@ -10,11 +10,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDateTime;
 import java.util.*;
+import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -87,8 +89,8 @@ class SlaRiskEngineTest {
         verify(snapshotService).saveSnapshot(eq(1L), any());
     }
 
-    @Test @DisplayName("高风险推送告警")
-    void highRiskPushAlert() {
+    @Test @DisplayName("高风险推送告警 — 包含riskSummaries")
+    void highRiskPushAlertWithSummaries() {
         SkillGroup g1 = sg(1L);
         when(skillGroupMapper.selectAllActive()).thenReturn(List.of(g1));
         Map<Long, SlaRiskScore> scores = Map.of(1L, risk(1L, 80.0));
@@ -96,7 +98,12 @@ class SlaRiskEngineTest {
 
         engine.runSlaCycle();
 
-        verify(messageQueue).publish(eq(MessageQueue.Topics.SLA_RISK_UPDATED), contains("true"));
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(messageQueue).publish(eq(MessageQueue.Topics.SLA_RISK_UPDATED), captor.capture());
+        String publishedMsg = captor.getValue();
+        assertThat(publishedMsg).contains("\"criticalAlert\":true");
+        assertThat(publishedMsg).contains("riskSummaries");
+        assertThat(publishedMsg).contains("\"maxRisk\"");
     }
 
     @Test @DisplayName("无技能组时跳过")
@@ -108,19 +115,38 @@ class SlaRiskEngineTest {
         verify(slaRiskCalculator, never()).calculateSkillGroupRisks(anyLong());
     }
 
-    @Test @DisplayName("风险历史记录被保存")
-    void riskHistorySaved() {
+    @Test @DisplayName("风险历史记录在重排之前被保存")
+    void riskHistorySavedBeforeReorder() {
         SkillGroup g1 = sg(1L);
         when(skillGroupMapper.selectAllActive()).thenReturn(List.of(g1));
         SlaRiskScore score = SlaRiskScore.builder()
-                .sessionId(1L).riskScore(60.0).vipLevel(0).waitSeconds(100L)
+                .sessionId(1L).riskScore(80.0).vipLevel(0).waitSeconds(100L)
                 .availableAgents(2).avgAgentLoad(1.5).calculatedAt(System.currentTimeMillis())
                 .build();
         when(slaRiskCalculator.calculateSkillGroupRisks(1L)).thenReturn(Map.of(1L, score));
 
         engine.runSlaCycle();
 
-        verify(slaRiskHistoryMapper).insert(any());
+        // Verify history is saved (happens before reorder in the new code)
+        var inOrder = inOrder(slaRiskHistoryMapper, queueReorderService);
+        inOrder.verify(slaRiskHistoryMapper).insert(any());
+        inOrder.verify(queueReorderService).reorderQueueByRisk(1L);
+    }
+
+    @Test @DisplayName("低风险推送也包含riskSummaries")
+    void lowRiskPushAlsoHasSummaries() {
+        SkillGroup g1 = sg(1L);
+        when(skillGroupMapper.selectAllActive()).thenReturn(List.of(g1));
+        Map<Long, SlaRiskScore> scores = Map.of(1L, risk(1L, 50.0));
+        when(slaRiskCalculator.calculateSkillGroupRisks(1L)).thenReturn(scores);
+
+        engine.runSlaCycle();
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(messageQueue).publish(eq(MessageQueue.Topics.SLA_RISK_UPDATED), captor.capture());
+        String publishedMsg = captor.getValue();
+        assertThat(publishedMsg).contains("\"criticalAlert\":false");
+        assertThat(publishedMsg).contains("riskSummaries");
     }
 
     private SkillGroup sg(long id) {

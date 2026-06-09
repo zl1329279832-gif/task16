@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.cs.alloc.service.AllocationEngineTest
 -------------------------------------------------------------------------------
-Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.661 s -- in com.cs.alloc.service.AllocationEngineTest
+Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.574 s -- in com.cs.alloc.service.AllocationEngineTest

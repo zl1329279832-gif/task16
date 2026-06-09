@@ -36,4 +36,16 @@
     <select id="selectByOriginalSkillGroupId" resultMap="BaseResultMap">
         SELECT * FROM queue_entry WHERE original_skill_group_id = #{originalSkillGroupId} ORDER BY priority_score DESC, joined_at ASC
     </select>
+    <select id="selectWaitingBySkillGroupId" resultMap="BaseResultMap">
+        SELECT qe.* FROM queue_entry qe
+        INNER JOIN session s ON s.id = qe.session_id
+        WHERE qe.skill_group_id = #{skillGroupId} AND s.status = 'WAITING'
+        ORDER BY qe.priority_score DESC, qe.joined_at ASC
+    </select>
+    <update id="batchUpdateSkillGroupWaiting">
+        UPDATE queue_entry qe
+        INNER JOIN session s ON s.id = qe.session_id
+        SET qe.skill_group_id = #{newSkillGroupId}, qe.original_skill_group_id = COALESCE(qe.original_skill_group_id, qe.skill_group_id)
+        WHERE qe.skill_group_id = #{oldSkillGroupId} AND s.status = 'WAITING'
+    </update>
 </mapper>

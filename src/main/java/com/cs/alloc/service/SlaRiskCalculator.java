@@ -105,10 +105,11 @@ public class SlaRiskCalculator {
     }
 
     /**
-     * 批量计算技能组内所有排队条目的风险评分。
+     * 批量计算技能组内所有 WAITING 状态排队条目的风险评分。
+     * 只处理 WAITING 会话，防止 ASSIGNED/ACTIVE 会话被误纳入重排。
      */
     public Map<Long, SlaRiskScore> calculateSkillGroupRisks(long skillGroupId) {
-        List<QueueEntry> entries = queueEntryMapper.selectBySkillGroupId(skillGroupId);
+        List<QueueEntry> entries = queueEntryMapper.selectWaitingBySkillGroupId(skillGroupId);
         Map<Long, SlaRiskScore> result = new LinkedHashMap<>();
         for (QueueEntry entry : entries) {
             SlaRiskScore score = calculateRisk(entry);

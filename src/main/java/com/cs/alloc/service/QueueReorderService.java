@@ -3,9 +3,11 @@ package com.cs.alloc.service;
 import com.cs.alloc.common.BizException;
 import com.cs.alloc.domain.AuditLog;
 import com.cs.alloc.domain.QueueEntry;
+import com.cs.alloc.domain.Session;
 import com.cs.alloc.domain.SlaRiskScore;
 import com.cs.alloc.mapper.AuditLogMapper;
 import com.cs.alloc.mapper.QueueEntryMapper;
+import com.cs.alloc.mapper.SessionMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,10 +25,12 @@ public class QueueReorderService {
     private final RedisService redisService;
     private final SlaRiskCalculator slaRiskCalculator;
     private final MessageQueue messageQueue;
+    private final SessionMapper sessionMapper;
 
     /**
      * 按风险评分重排指定技能组的队列。
      * 只影响 WAITING 状态的排队条目，不破坏已接入会话。
+     * 同时清理 Redis 队列中残留的非 WAITING 会话。
      */
     @Transactional
     public boolean reorderQueueByRisk(long skillGroupId) {
@@ -37,8 +41,26 @@ public class QueueReorderService {
             return false;
         }
         try {
+            // calculateSkillGroupRisks 已内部只查 WAITING 状态会话
             Map<Long, SlaRiskScore> riskScores = slaRiskCalculator.calculateSkillGroupRisks(skillGroupId);
             if (riskScores.isEmpty()) return false;
+
+            // 清理 Redis 中残留的非 WAITING 会话
+            Set<String> redisMembers = redisService.getQueueMembers(skillGroupId);
+            if (redisMembers != null) {
+                Set<String> waitingIds = riskScores.keySet().stream()
+                        .map(String::valueOf).collect(Collectors.toSet());
+                int evicted = 0;
+                for (String member : redisMembers) {
+                    if (!waitingIds.contains(member)) {
+                        redisService.removeFromQueue(skillGroupId, Long.parseLong(member));
+                        evicted++;
+                    }
+                }
+                if (evicted > 0) {
+                    log.warn("技能组 {} 清理 {} 个非WAITING残留条目", skillGroupId, evicted);
+                }
+            }
 
             // Sort by risk score descending (highest risk first)
             List<Map.Entry<Long, SlaRiskScore>> sorted = riskScores.entrySet().stream()
@@ -65,9 +87,9 @@ public class QueueReorderService {
             // Audit log
             audit("SYSTEM", "SYSTEM", "QUEUE_REORDER", "SKILL_GROUP",
                     String.valueOf(skillGroupId),
-                    String.format("按风险评分重排队列, 共%d个会话", sorted.size()));
+                    String.format("按风险评分重排队列, 共%d个WAITING会话", sorted.size()));
 
-            log.info("技能组 {} 队列重排完成, {} 个会话", skillGroupId, sorted.size());
+            log.info("技能组 {} 队列重排完成, {} 个WAITING会话", skillGroupId, sorted.size());
             return true;
         } finally {
             redisService.unlock(lockKey, lockOwner);
@@ -76,11 +98,13 @@ public class QueueReorderService {
 
     /**
      * 人工置顶: 将指定会话固定在队列最前面。
+     * 仅允许对 WAITING 状态的会话操作。
      */
     @Transactional
     public void pinSession(long sessionId, String operatorId) {
         QueueEntry entry = queueEntryMapper.selectBySessionId(sessionId);
         if (entry == null) throw new BizException("会话不在排队中");
+        assertSessionWaiting(sessionId);
 
         queueEntryMapper.updatePinned(sessionId, true);
         queueEntryMapper.updatePriorityScore(sessionId, Integer.MAX_VALUE);
@@ -110,11 +134,13 @@ public class QueueReorderService {
 
     /**
      * VIP 插队: 为 VIP 客户一次性增加优先级分数。
+     * 仅允许对 WAITING 状态的会话操作。
      */
     @Transactional
     public void applyVipJump(long sessionId, int vipLevel, String operatorId) {
         QueueEntry entry = queueEntryMapper.selectBySessionId(sessionId);
         if (entry == null) throw new BizException("会话不在排队中");
+        assertSessionWaiting(sessionId);
 
         int bonus = vipLevel * 10;
         int newScore = (entry.getPriorityScore() != null ? entry.getPriorityScore() : 0) + bonus;
@@ -125,6 +151,17 @@ public class QueueReorderService {
                 String.valueOf(sessionId),
                 String.format("VIP%d插队, 加分%d, 新分数%d", vipLevel, bonus, newScore));
         log.info("会话 {} VIP{}插队, 新分数: {}", sessionId, vipLevel, newScore);
+    }
+
+    /**
+     * 校验 session 必须处于 WAITING 状态, 否则拒绝操作。
+     */
+    private void assertSessionWaiting(long sessionId) {
+        Session session = sessionMapper.selectById(sessionId);
+        if (session == null || !"WAITING".equals(session.getStatus())) {
+            throw new BizException("仅允许操作WAITING状态的会话, 当前状态: "
+                    + (session != null ? session.getStatus() : "不存在"));
+        }
     }
 
     private void audit(String operatorId, String operatorType, String action,

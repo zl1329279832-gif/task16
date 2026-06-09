@@ -33,6 +33,7 @@ class SlaRiskIntegrationTest {
     @Mock private CustomerMapper customerMapper;
     @Mock private AuditLogMapper auditLogMapper;
     @Mock private RedisService redisService;
+    @Mock private SessionMapper sessionMapper;
     private SlaRiskProperties properties;
 
     @BeforeEach
@@ -85,11 +86,12 @@ class SlaRiskIntegrationTest {
         SlaRiskCalculator realCalc = new SlaRiskCalculator(queueEntryMapper, customerMapper,
                 agentMapper, redisService, properties);
         QueueReorderService reorderService = new QueueReorderService(
-                queueEntryMapper, auditLogMapper, redisService, realCalc, messageQueue);
+                queueEntryMapper, auditLogMapper, redisService, realCalc, messageQueue, sessionMapper);
 
         // VIP jump first
         vipEntry.setPriorityScore(50);
         when(queueEntryMapper.selectBySessionId(1L)).thenReturn(vipEntry);
+        when(sessionMapper.selectById(1L)).thenReturn(waitingSession(1L));
         reorderService.applyVipJump(1L, 3, "system");
 
         verify(queueEntryMapper).updatePriorityScore(1L, 80); // 50 + 30
@@ -123,25 +125,86 @@ class SlaRiskIntegrationTest {
         assertThat(score.getPinned()).isTrue();
     }
 
-    @Test @DisplayName("多技能组降级: 两个组同时降级")
+    @Test @DisplayName("多技能组降级: 两个组同时降级 — 仅迁移WAITING")
     void doubleDegradation() {
         SkillGroupDegradationService degradationSvc = new SkillGroupDegradationService(
-                queueEntryMapper, agentMapper, auditLogMapper, redisService, messageQueue, properties);
+                queueEntryMapper, agentMapper, auditLogMapper, redisService, messageQueue, properties, sessionMapper);
 
         when(agentMapper.selectBySkillGroupId(1L)).thenReturn(Collections.emptyList());
         when(agentMapper.selectBySkillGroupId(2L)).thenReturn(Collections.emptyList());
         QueueEntry e1 = qe(1L, 1L, 100L);
         QueueEntry e2 = qe(2L, 2L, 200L);
-        when(queueEntryMapper.selectBySkillGroupId(1L)).thenReturn(List.of(e1));
-        when(queueEntryMapper.selectBySkillGroupId(2L)).thenReturn(List.of(e2));
-        when(queueEntryMapper.batchUpdateSkillGroup(1L, 99L)).thenReturn(1);
-        when(queueEntryMapper.batchUpdateSkillGroup(2L, 99L)).thenReturn(1);
+        when(queueEntryMapper.selectWaitingBySkillGroupId(1L)).thenReturn(List.of(e1));
+        when(queueEntryMapper.selectWaitingBySkillGroupId(2L)).thenReturn(List.of(e2));
+        when(queueEntryMapper.batchUpdateSkillGroupWaiting(1L, 99L)).thenReturn(1);
+        when(queueEntryMapper.batchUpdateSkillGroupWaiting(2L, 99L)).thenReturn(1);
 
         boolean r1 = degradationSvc.checkAndDegrade(1L);
         boolean r2 = degradationSvc.checkAndDegrade(2L);
         assertThat(r1).isTrue();
         assertThat(r2).isTrue();
         verify(messageQueue, times(2)).publish(eq(MessageQueue.Topics.SKILLGROUP_DEGRADED), anyString());
+    }
+
+    // ===== 新增: 多技能组并发入队一致性 =====
+
+    @Test @DisplayName("多技能组并发入队: history先落库再推送事件")
+    void multiGroupHistoryBeforeEvent() {
+        SkillGroup g1 = sg(1L); SkillGroup g2 = sg(2L);
+        when(skillGroupMapper.selectAllActive()).thenReturn(List.of(g1, g2));
+        when(slaRiskCalculator.calculateSkillGroupRisks(1L))
+                .thenReturn(Map.of(101L, risk(101L, 80.0)));
+        when(slaRiskCalculator.calculateSkillGroupRisks(2L))
+                .thenReturn(Map.of(201L, risk(201L, 50.0)));
+
+        SlaRiskEngine engine = buildEngine();
+        engine.runSlaCycle();
+
+        // History must be saved for both groups before the unified event push
+        var inOrder = inOrder(slaRiskHistoryMapper, messageQueue);
+        inOrder.verify(slaRiskHistoryMapper, times(2)).insert(any());
+        inOrder.verify(messageQueue).publish(eq(MessageQueue.Topics.SLA_RISK_UPDATED), anyString());
+    }
+
+    @Test @DisplayName("VIP插队对ASSIGNED会话拒绝操作")
+    void vipJumpOnAssignedSessionRejected() {
+        QueueEntry entry = qe(1L, 1L, 100L);
+        entry.setPriorityScore(50);
+
+        SlaRiskCalculator realCalc = new SlaRiskCalculator(queueEntryMapper, customerMapper,
+                agentMapper, redisService, properties);
+        QueueReorderService reorderService = new QueueReorderService(
+                queueEntryMapper, auditLogMapper, redisService, realCalc, messageQueue, sessionMapper);
+
+        when(queueEntryMapper.selectBySessionId(1L)).thenReturn(entry);
+        Session assigned = new Session();
+        assigned.setId(1L);
+        assigned.setStatus("ASSIGNED");
+        when(sessionMapper.selectById(1L)).thenReturn(assigned);
+
+        assertThatThrownBy(() -> reorderService.applyVipJump(1L, 3, "system"))
+                .isInstanceOf(com.cs.alloc.common.BizException.class)
+                .hasMessageContaining("WAITING");
+    }
+
+    @Test @DisplayName("人工置顶ACTIVE会话被拒绝")
+    void pinActiveSessionRejected() {
+        QueueEntry entry = qe(1L, 1L, 100L);
+
+        SlaRiskCalculator realCalc = new SlaRiskCalculator(queueEntryMapper, customerMapper,
+                agentMapper, redisService, properties);
+        QueueReorderService reorderService = new QueueReorderService(
+                queueEntryMapper, auditLogMapper, redisService, realCalc, messageQueue, sessionMapper);
+
+        when(queueEntryMapper.selectBySessionId(1L)).thenReturn(entry);
+        Session active = new Session();
+        active.setId(1L);
+        active.setStatus("ACTIVE");
+        when(sessionMapper.selectById(1L)).thenReturn(active);
+
+        assertThatThrownBy(() -> reorderService.pinSession(1L, "admin"))
+                .isInstanceOf(com.cs.alloc.common.BizException.class)
+                .hasMessageContaining("WAITING");
     }
 
     private SlaRiskEngine buildEngine() {
@@ -169,5 +232,11 @@ class SlaRiskIntegrationTest {
     }
     private Customer customer(long id, int vip) {
         Customer c = new Customer(); c.setId(id); c.setVipLevel(vip); return c;
+    }
+    private Session waitingSession(long id) {
+        Session s = new Session();
+        s.setId(id);
+        s.setStatus("WAITING");
+        return s;
     }
 }
