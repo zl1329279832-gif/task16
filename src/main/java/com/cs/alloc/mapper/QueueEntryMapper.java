@@ -16,4 +16,8 @@ public interface QueueEntryMapper {
     void updatePosition(@Param("sessionId") Long sessionId, @Param("position") int position);
     void updatePriorityScore(@Param("sessionId") Long sessionId, @Param("priorityScore") int score);
     int countBySkillGroupId(@Param("skillGroupId") Long skillGroupId);
+    void updatePinned(@Param("sessionId") Long sessionId, @Param("pinned") boolean pinned);
+    void updateSkillGroupId(@Param("sessionId") Long sessionId, @Param("skillGroupId") Long skillGroupId, @Param("originalSkillGroupId") Long originalSkillGroupId);
+    int batchUpdateSkillGroup(@Param("oldSkillGroupId") Long oldSkillGroupId, @Param("newSkillGroupId") Long newSkillGroupId);
+    List<QueueEntry> selectByOriginalSkillGroupId(@Param("originalSkillGroupId") Long originalSkillGroupId);
 }

@@ -11,5 +11,7 @@ public class QueueEntry {
     private Long skillGroupId;
     private Integer priorityScore;
     private Integer position;
+    private Boolean pinned;
+    private Long originalSkillGroupId;
     private LocalDateTime joinedAt;
 }

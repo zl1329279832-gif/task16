@@ -45,6 +45,24 @@ cs:
     load-penalty: 10
   mq:
     type: memory
+  sla:
+    enabled: true
+    interval-ms: 5000
+    vip-weight: 25.0
+    wait-weight: 0.5
+    availability-weight: 20.0
+    load-weight: 15.0
+    aht-multiplier: 0.1
+    heartbeat-penalty: 30.0
+    risk-threshold: 75.0
+    degradation-timeout-seconds: 600
+    snapshot-interval-seconds: 30
+    pinned-ttl-seconds: 3600
+    snapshot-ttl-seconds: 300
+    fallback-skill-groups:
+      1: 99
+      2: 99
+      3: 98
 
 logging:
   level:

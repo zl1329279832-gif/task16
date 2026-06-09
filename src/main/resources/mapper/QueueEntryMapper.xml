@@ -8,6 +8,8 @@
         <result column="skill_group_id" property="skillGroupId"/>
         <result column="priority_score" property="priorityScore"/>
         <result column="position" property="position"/>
+        <result column="pinned" property="pinned"/>
+        <result column="original_skill_group_id" property="originalSkillGroupId"/>
         <result column="joined_at" property="joinedAt"/>
     </resultMap>
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
@@ -25,4 +27,13 @@
     <update id="updatePosition">UPDATE queue_entry SET position = #{position} WHERE session_id = #{sessionId}</update>
     <update id="updatePriorityScore">UPDATE queue_entry SET priority_score = #{priorityScore} WHERE session_id = #{sessionId}</update>
     <select id="countBySkillGroupId" resultType="int">SELECT COUNT(*) FROM queue_entry WHERE skill_group_id = #{skillGroupId}</select>
+    <update id="updatePinned">UPDATE queue_entry SET pinned = #{pinned} WHERE session_id = #{sessionId}</update>
+    <update id="updateSkillGroupId">UPDATE queue_entry SET skill_group_id = #{skillGroupId}, original_skill_group_id = #{originalSkillGroupId} WHERE session_id = #{sessionId}</update>
+    <update id="batchUpdateSkillGroup">
+        UPDATE queue_entry SET skill_group_id = #{newSkillGroupId}, original_skill_group_id = COALESCE(original_skill_group_id, skill_group_id)
+        WHERE skill_group_id = #{oldSkillGroupId}
+    </update>
+    <select id="selectByOriginalSkillGroupId" resultMap="BaseResultMap">
+        SELECT * FROM queue_entry WHERE original_skill_group_id = #{originalSkillGroupId} ORDER BY priority_score DESC, joined_at ASC
+    </select>
 </mapper>

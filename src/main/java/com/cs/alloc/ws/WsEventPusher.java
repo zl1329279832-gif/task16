@@ -71,6 +71,18 @@ public class WsEventPusher {
         String msg = buildMessage(event, data);
         for (Set<WebSocketSession> sessions : agentSessions.values()) for (WebSocketSession ws : sessions) sendText(ws, msg);
     }
+    public void pushSlaRiskUpdate(long skillGroupId, Map<String, Object> data) {
+        broadcastToAgents("sla.risk.updated", data);
+    }
+    public void pushQueueReordered(long skillGroupId, Map<String, Object> data) {
+        broadcastToAgents("queue.reordered", data);
+    }
+    public void pushDegradationAlert(long skillGroupId, Map<String, Object> data) {
+        broadcastToAgents("skillgroup.degraded", data);
+    }
+    public void pushDegradationRestored(long skillGroupId, Map<String, Object> data) {
+        broadcastToAgents("skillgroup.restored", data);
+    }
 
     private String buildMessage(String event, Map<String, Object> data) {
         try { return MAPPER.writeValueAsString(Map.of("event", event, "data", data, "timestamp", System.currentTimeMillis())); }
@@ -114,6 +126,22 @@ public class WsEventPusher {
         mq.subscribe(MessageQueue.Topics.SYSTEM_NOTICE, msg -> {
             try { Map<String, Object> data = MAPPER.readValue(msg, Map.class); broadcastToAgents("system.notice", data); }
             catch (Exception e) { log.error("SYSTEM_NOTICE事件处理失败", e); }
+        });
+        mq.subscribe(MessageQueue.Topics.SLA_RISK_UPDATED, msg -> {
+            try { Map<String, Object> data = MAPPER.readValue(msg, Map.class); broadcastToAgents("sla.risk.updated", data); }
+            catch (Exception e) { log.error("SLA_RISK_UPDATED事件处理失败", e); }
+        });
+        mq.subscribe(MessageQueue.Topics.QUEUE_REORDERED, msg -> {
+            try { Map<String, Object> data = MAPPER.readValue(msg, Map.class); broadcastToAgents("queue.reordered", data); }
+            catch (Exception e) { log.error("QUEUE_REORDERED事件处理失败", e); }
+        });
+        mq.subscribe(MessageQueue.Topics.SKILLGROUP_DEGRADED, msg -> {
+            try { Map<String, Object> data = MAPPER.readValue(msg, Map.class); broadcastToAgents("skillgroup.degraded", data); }
+            catch (Exception e) { log.error("SKILLGROUP_DEGRADED事件处理失败", e); }
+        });
+        mq.subscribe(MessageQueue.Topics.SKILLGROUP_RESTORED, msg -> {
+            try { Map<String, Object> data = MAPPER.readValue(msg, Map.class); broadcastToAgents("skillgroup.restored", data); }
+            catch (Exception e) { log.error("SKILLGROUP_RESTORED事件处理失败", e); }
         });
         log.info("MQ → WebSocket 事件桥接初始化完成");
     }

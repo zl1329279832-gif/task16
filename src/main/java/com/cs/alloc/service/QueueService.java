@@ -102,6 +102,32 @@ public class QueueService {
         return queueEntryMapper.selectBySkillGroupId(skillGroupId);
     }
 
+    public void updatePriorityScore(long sessionId, int newScore) {
+        QueueEntry entry = queueEntryMapper.selectBySessionId(sessionId);
+        if (entry == null) return;
+        queueEntryMapper.updatePriorityScore(sessionId, newScore);
+        redisService.updateQueueEntryScore(entry.getSkillGroupId(), sessionId, newScore);
+    }
+
+    @Transactional
+    public void migrateToSkillGroup(long skillGroupId, long newSkillGroupId) {
+        List<QueueEntry> entries = queueEntryMapper.selectBySkillGroupId(skillGroupId);
+        int migrated = queueEntryMapper.batchUpdateSkillGroup(skillGroupId, newSkillGroupId);
+        for (QueueEntry entry : entries) {
+            redisService.removeFromQueue(skillGroupId, entry.getSessionId());
+            redisService.addToQueue(newSkillGroupId, entry.getSessionId(),
+                    entry.getPriorityScore() != null ? entry.getPriorityScore() : 0);
+        }
+    }
+
+    public List<QueueEntry> getEntriesByOriginalGroup(long originalSkillGroupId) {
+        return queueEntryMapper.selectByOriginalSkillGroupId(originalSkillGroupId);
+    }
+
+    public void setPinned(long sessionId, boolean pinned) {
+        queueEntryMapper.updatePinned(sessionId, pinned);
+    }
+
     private int calculatePriority(int vipLevel, LocalDateTime joinedAt) {
         long waitSeconds = java.time.temporal.ChronoUnit.SECONDS.between(joinedAt, LocalDateTime.now());
         return vipLevel * 10 + (int) waitSeconds;

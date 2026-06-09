@@ -17,6 +17,9 @@ CREATE TABLE skill_group (
     name            VARCHAR(100)  NOT NULL,
     description     VARCHAR(500)  DEFAULT NULL,
     priority        INT           NOT NULL DEFAULT 0,
+    avg_handling_time_seconds BIGINT DEFAULT 300,
+    fallback_skill_group_id BIGINT NULL,
+    active          TINYINT(1)    NOT NULL DEFAULT 1,
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -82,6 +85,8 @@ CREATE TABLE queue_entry (
     skill_group_id  BIGINT        NOT NULL,
     priority_score  INT           NOT NULL DEFAULT 0,
     position        INT           NOT NULL DEFAULT 0,
+    pinned          TINYINT(1)    NOT NULL DEFAULT 0,
+    original_skill_group_id BIGINT NULL,
     joined_at       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE INDEX uk_queue_session (session_id),
     INDEX idx_queue_skill_priority (skill_group_id, priority_score DESC),
@@ -131,3 +136,18 @@ INSERT INTO agent_state (agent_id, current_load) VALUES (1,0),(2,0),(3,0),(4,0);
 INSERT INTO customer (id, name, vip_level, source) VALUES
 (1, '普通用户A', 0, 'web'),
 (2, '金卡用户B', 2, 'app');
+
+-- SLA 风险评分历史表
+CREATE TABLE sla_risk_history (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    session_id      BIGINT        NOT NULL,
+    skill_group_id  BIGINT        NOT NULL,
+    risk_score      DOUBLE        NOT NULL,
+    vip_level       INT           NOT NULL,
+    wait_seconds    BIGINT        NOT NULL,
+    available_agents INT          NOT NULL,
+    avg_agent_load  DOUBLE        NOT NULL,
+    calculated_at   BIGINT        NOT NULL,
+    INDEX idx_srh_session (session_id, calculated_at),
+    INDEX idx_srh_sg (skill_group_id, calculated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

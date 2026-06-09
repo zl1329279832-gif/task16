@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cs.alloc.mapper.SlaRiskHistoryMapper">
+    <resultMap id="BaseResultMap" type="SlaRiskHistory">
+        <id column="id" property="id"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="skill_group_id" property="skillGroupId"/>
+        <result column="risk_score" property="riskScore"/>
+        <result column="vip_level" property="vipLevel"/>
+        <result column="wait_seconds" property="waitSeconds"/>
+        <result column="available_agents" property="availableAgents"/>
+        <result column="avg_agent_load" property="avgAgentLoad"/>
+        <result column="calculated_at" property="calculatedAt"/>
+    </resultMap>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sla_risk_history (session_id, skill_group_id, risk_score, vip_level, wait_seconds, available_agents, avg_agent_load, calculated_at)
+        VALUES (#{sessionId}, #{skillGroupId}, #{riskScore}, #{vipLevel}, #{waitSeconds}, #{availableAgents}, #{avgAgentLoad}, #{calculatedAt})
+    </insert>
+    <delete id="deleteOlderThan">
+        DELETE FROM sla_risk_history WHERE calculated_at &lt; #{olderThanSeconds}
+    </delete>
+</mapper>

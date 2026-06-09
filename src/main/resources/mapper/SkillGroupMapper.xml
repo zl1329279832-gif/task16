@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cs.alloc.mapper.SkillGroupMapper">
+    <resultMap id="BaseResultMap" type="SkillGroup">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="description" property="description"/>
+        <result column="priority" property="priority"/>
+        <result column="avg_handling_time_seconds" property="avgHandlingTimeSeconds"/>
+        <result column="fallback_skill_group_id" property="fallbackSkillGroupId"/>
+        <result column="active" property="active"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+    <select id="selectById" resultMap="BaseResultMap">SELECT * FROM skill_group WHERE id = #{id}</select>
+    <select id="selectAllActive" resultMap="BaseResultMap">SELECT * FROM skill_group WHERE active = 1</select>
+    <update id="updateAvgHandlingTime">UPDATE skill_group SET avg_handling_time_seconds = #{avgHandlingTimeSeconds} WHERE id = #{id}</update>
+</mapper>

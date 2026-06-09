@@ -23,6 +23,8 @@ public class RedisService {
     private static final String KEY_IDEMPOTENCY    = "cs:idempotency:";
     private static final String KEY_LOCK           = "cs:lock:";
     private static final String KEY_HEARTBEAT      = "cs:agent:heartbeat:";
+    private static final String KEY_QUEUE_SNAPSHOT  = "cs:queue:snapshot:";
+    private static final String KEY_PINNED          = "cs:queue:pinned:";
 
     private final StringRedisTemplate redis;
 
@@ -193,5 +195,36 @@ public class RedisService {
         if (owner == null) return;
         redis.execute(new DefaultRedisScript<>(UNLOCK_LUA, Long.class),
                 List.of(KEY_LOCK + key), owner);
+    }
+
+    // ========== Queue Snapshot ==========
+
+    public void saveQueueSnapshot(long skillGroupId, String snapshotJson, Duration ttl) {
+        redis.opsForValue().set(KEY_QUEUE_SNAPSHOT + skillGroupId, snapshotJson, ttl);
+    }
+
+    public Optional<String> getQueueSnapshot(long skillGroupId) {
+        String val = redis.opsForValue().get(KEY_QUEUE_SNAPSHOT + skillGroupId);
+        return Optional.ofNullable(val);
+    }
+
+    // ========== Pinned Flag ==========
+
+    public void setPinnedFlag(long sessionId, Duration ttl) {
+        redis.opsForValue().set(KEY_PINNED + sessionId, "1", ttl);
+    }
+
+    public void clearPinnedFlag(long sessionId) {
+        redis.delete(KEY_PINNED + sessionId);
+    }
+
+    public boolean isPinned(long sessionId) {
+        return Boolean.TRUE.equals(redis.hasKey(KEY_PINNED + sessionId));
+    }
+
+    // ========== Queue Score Update ==========
+
+    public void updateQueueEntryScore(long skillGroupId, long sessionId, double newScore) {
+        redis.opsForZSet().add(KEY_QUEUE_SET + skillGroupId, String.valueOf(sessionId), newScore);
     }
 }

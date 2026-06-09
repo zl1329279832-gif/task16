@@ -9,5 +9,8 @@ public class SkillGroup {
     private String name;
     private String description;
     private Integer priority;
+    private Long avgHandlingTimeSeconds;
+    private Long fallbackSkillGroupId;
+    private Boolean active;
     private LocalDateTime createdAt;
 }
