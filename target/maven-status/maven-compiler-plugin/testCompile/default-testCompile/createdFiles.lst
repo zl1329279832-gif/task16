@@ -1,5 +1,7 @@
+com\cs\alloc\service\DynamicRequeueServiceTest.class
+com\cs\alloc\service\SessionServiceTest.class
+com\cs\alloc\service\SlaRiskPredictorTest.class
 com\cs\alloc\ws\AgentWebSocketHandlerTest.class
 com\cs\alloc\service\AllocationEngineTest.class
 com\cs\alloc\service\MessageServiceTest.class
 com\cs\alloc\service\QueueServiceTest.class
-com\cs\alloc\service\SessionServiceTest.class

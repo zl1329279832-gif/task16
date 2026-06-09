@@ -9,14 +9,24 @@
         <result column="priority_score" property="priorityScore"/>
         <result column="position" property="position"/>
         <result column="joined_at" property="joinedAt"/>
+        <result column="sla_deadline" property="slaDeadline"/>
+        <result column="risk_score" property="riskScore"/>
+        <result column="risk_level" property="riskLevel"/>
+        <result column="pinned" property="pinned"/>
+        <result column="pinned_by" property="pinnedBy"/>
+        <result column="original_skill_group_id" property="originalSkillGroupId"/>
     </resultMap>
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO queue_entry (session_id, customer_id, skill_group_id, priority_score, position)
-        VALUES (#{sessionId}, #{customerId}, #{skillGroupId}, #{priorityScore}, #{position})
+        INSERT INTO queue_entry (session_id, customer_id, skill_group_id, priority_score, position,
+            sla_deadline, risk_score, risk_level, pinned, pinned_by, original_skill_group_id)
+        VALUES (#{sessionId}, #{customerId}, #{skillGroupId}, #{priorityScore}, #{position},
+            #{slaDeadline}, #{riskScore}, #{riskLevel}, #{pinned}, #{pinnedBy}, #{originalSkillGroupId})
     </insert>
     <insert id="insertIgnore" useGeneratedKeys="true" keyProperty="id">
-        INSERT IGNORE INTO queue_entry (session_id, customer_id, skill_group_id, priority_score, position)
-        VALUES (#{sessionId}, #{customerId}, #{skillGroupId}, #{priorityScore}, #{position})
+        INSERT IGNORE INTO queue_entry (session_id, customer_id, skill_group_id, priority_score, position,
+            sla_deadline, risk_score, risk_level, pinned, pinned_by, original_skill_group_id)
+        VALUES (#{sessionId}, #{customerId}, #{skillGroupId}, #{priorityScore}, #{position},
+            #{slaDeadline}, #{riskScore}, #{riskLevel}, #{pinned}, #{pinnedBy}, #{originalSkillGroupId})
     </insert>
     <select id="selectBySessionId" resultMap="BaseResultMap">SELECT * FROM queue_entry WHERE session_id = #{sessionId}</select>
     <select id="selectBySkillGroupId" resultMap="BaseResultMap">SELECT * FROM queue_entry WHERE skill_group_id = #{skillGroupId} ORDER BY priority_score DESC, joined_at ASC</select>
@@ -25,4 +35,23 @@
     <update id="updatePosition">UPDATE queue_entry SET position = #{position} WHERE session_id = #{sessionId}</update>
     <update id="updatePriorityScore">UPDATE queue_entry SET priority_score = #{priorityScore} WHERE session_id = #{sessionId}</update>
     <select id="countBySkillGroupId" resultType="int">SELECT COUNT(*) FROM queue_entry WHERE skill_group_id = #{skillGroupId}</select>
+    <update id="updateRisk">
+        UPDATE queue_entry SET risk_score = #{riskScore}, risk_level = #{riskLevel} WHERE session_id = #{sessionId}
+    </update>
+    <update id="updateSlaDeadline">
+        UPDATE queue_entry SET sla_deadline = #{slaDeadline} WHERE session_id = #{sessionId}
+    </update>
+    <update id="updatePinned">
+        UPDATE queue_entry SET pinned = #{pinned}, pinned_by = #{pinnedBy} WHERE session_id = #{sessionId}
+    </update>
+    <update id="updateSkillGroupId">
+        UPDATE queue_entry SET skill_group_id = #{skillGroupId}, original_skill_group_id = #{originalSkillGroupId}
+        WHERE session_id = #{sessionId}
+    </update>
+    <select id="selectByRiskLevel" resultMap="BaseResultMap">
+        SELECT * FROM queue_entry WHERE risk_level = #{riskLevel} ORDER BY risk_score DESC
+    </select>
+    <select id="selectPinned" resultMap="BaseResultMap">
+        SELECT * FROM queue_entry WHERE pinned = 1 ORDER BY joined_at ASC
+    </select>
 </mapper>

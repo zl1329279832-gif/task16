@@ -14,5 +14,7 @@ public interface MessageQueue {
         String AGENT_STATUS       = "agent.status";
         String CHAT_MESSAGE       = "chat.message";
         String SYSTEM_NOTICE      = "system.notice";
+        String SLA_RISK_CHANGED   = "sla.risk.changed";
+        String QUEUE_REORDERED    = "queue.reordered";
     }
 }

@@ -2,6 +2,7 @@ package com.cs.alloc.service;
 
 import com.cs.alloc.domain.QueueEntry;
 import com.cs.alloc.domain.Session;
+import com.cs.alloc.mapper.CustomerMapper;
 import com.cs.alloc.mapper.QueueEntryMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,9 +17,10 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class QueueServiceTest {
     @Mock private QueueEntryMapper queueEntryMapper; @Mock private RedisService redisService;
+    @Mock private CustomerMapper customerMapper;
     private QueueService svc;
 
-    @BeforeEach void setUp() { svc = new QueueService(queueEntryMapper, redisService); }
+    @BeforeEach void setUp() { svc = new QueueService(queueEntryMapper, redisService, customerMapper); }
 
     @Test @DisplayName("正常入队")
     void join() {

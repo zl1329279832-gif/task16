@@ -76,15 +76,22 @@ CREATE TABLE message (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE queue_entry (
-    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    session_id      BIGINT        NOT NULL,
-    customer_id     BIGINT        NOT NULL,
-    skill_group_id  BIGINT        NOT NULL,
-    priority_score  INT           NOT NULL DEFAULT 0,
-    position        INT           NOT NULL DEFAULT 0,
-    joined_at       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id                      BIGINT AUTO_INCREMENT PRIMARY KEY,
+    session_id              BIGINT        NOT NULL,
+    customer_id             BIGINT        NOT NULL,
+    skill_group_id          BIGINT        NOT NULL,
+    priority_score          INT           NOT NULL DEFAULT 0,
+    position                INT           NOT NULL DEFAULT 0,
+    joined_at               DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sla_deadline            DATETIME      DEFAULT NULL COMMENT 'SLA超时截止时间',
+    risk_score              INT           NOT NULL DEFAULT 0 COMMENT 'SLA风险分数 0-100',
+    risk_level              VARCHAR(20)   NOT NULL DEFAULT 'LOW' COMMENT 'LOW/MEDIUM/HIGH/CRITICAL',
+    pinned                  TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '是否人工置顶',
+    pinned_by               VARCHAR(64)   DEFAULT NULL COMMENT '置顶操作人',
+    original_skill_group_id BIGINT        DEFAULT NULL COMMENT '降级前原始技能组ID',
     UNIQUE INDEX uk_queue_session (session_id),
     INDEX idx_queue_skill_priority (skill_group_id, priority_score DESC),
+    INDEX idx_queue_risk (risk_level, risk_score DESC),
     CONSTRAINT fk_queue_session FOREIGN KEY (session_id) REFERENCES session(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -113,6 +120,26 @@ CREATE TABLE audit_log (
     INDEX idx_audit_operator (operator_id),
     INDEX idx_audit_target (target_type, target_id),
     INDEX idx_audit_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE requeue_audit_log (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    session_id      BIGINT        NOT NULL,
+    action          VARCHAR(30)   NOT NULL COMMENT 'PIN_TOP/VIP_JUMP/SKILL_FALLBACK/SLA_REORDER/UNPIN',
+    operator_id     VARCHAR(64)   DEFAULT NULL,
+    operator_type   VARCHAR(10)   DEFAULT 'SYSTEM' COMMENT 'AGENT/SUPERVISOR/SYSTEM',
+    skill_group_id  BIGINT        DEFAULT NULL,
+    old_position    INT           DEFAULT NULL,
+    new_position    INT           DEFAULT NULL,
+    old_priority    INT           DEFAULT NULL,
+    new_priority    INT           DEFAULT NULL,
+    old_risk_level  VARCHAR(20)   DEFAULT NULL,
+    new_risk_level  VARCHAR(20)   DEFAULT NULL,
+    detail          TEXT          DEFAULT NULL,
+    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_requeue_session (session_id),
+    INDEX idx_requeue_action (action),
+    INDEX idx_requeue_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO skill_group (id, name, description, priority) VALUES

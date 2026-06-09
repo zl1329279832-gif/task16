@@ -24,6 +24,7 @@ public class AllocationEngine {
     private final AllocationLogMapper allocationLogMapper;
     private final RedisService redisService;
     private final MessageQueue messageQueue;
+    private final DynamicRequeueService dynamicRequeueService;
 
     @Value("${cs.allocation.skill-match-score:50}")
     private int skillMatchBonus;
@@ -33,7 +34,7 @@ public class AllocationEngine {
     public AllocationEngine(QueueService queueService, AgentMapper agentMapper,
                             AgentStateMapper agentStateMapper, SessionMapper sessionMapper,
                             AllocationLogMapper allocationLogMapper, RedisService redisService,
-                            MessageQueue messageQueue) {
+                            MessageQueue messageQueue, DynamicRequeueService dynamicRequeueService) {
         this.queueService = queueService;
         this.agentMapper = agentMapper;
         this.agentStateMapper = agentStateMapper;
@@ -41,6 +42,7 @@ public class AllocationEngine {
         this.allocationLogMapper = allocationLogMapper;
         this.redisService = redisService;
         this.messageQueue = messageQueue;
+        this.dynamicRequeueService = dynamicRequeueService;
     }
 
     @Scheduled(fixedDelayString = "${cs.allocation.interval-ms:2000}")
@@ -48,12 +50,33 @@ public class AllocationEngine {
         List<QueueEntry> allWaiting = queueService.getAllWaiting();
         if (allWaiting.isEmpty()) return;
 
+        // 对高风险且无可用客服的会话, 尝试技能组降级兜底
+        for (QueueEntry qe : allWaiting) {
+            if (qe.getRiskScore() != null && qe.getRiskScore() >= 60) {
+                dynamicRequeueService.skillFallback(qe.getSessionId());
+            }
+        }
+
+        // 重新加载队列 (降级后可能有变化)
+        allWaiting = queueService.getAllWaiting();
         Map<Long, List<QueueEntry>> byGroup = allWaiting.stream()
                 .collect(Collectors.groupingBy(QueueEntry::getSkillGroupId));
 
         for (Map.Entry<Long, List<QueueEntry>> entry : byGroup.entrySet()) {
             long skillGroupId = entry.getKey();
             List<QueueEntry> waiting = entry.getValue();
+
+            // 按风险分数排序: 置顶优先, 高风险优先
+            waiting.sort((a, b) -> {
+                boolean aPinned = Boolean.TRUE.equals(a.getPinned());
+                boolean bPinned = Boolean.TRUE.equals(b.getPinned());
+                if (aPinned != bPinned) return aPinned ? -1 : 1;
+                int aRisk = a.getRiskScore() != null ? a.getRiskScore() : 0;
+                int bRisk = b.getRiskScore() != null ? b.getRiskScore() : 0;
+                if (aRisk != bRisk) return Integer.compare(bRisk, aRisk);
+                return Integer.compare(b.getPriorityScore(), a.getPriorityScore());
+            });
+
             List<AgentCandidate> candidates = loadCandidates(skillGroupId);
             if (candidates.isEmpty()) {
                 log.debug("技能组 {} 无可用客服, 排队 {} 人", skillGroupId, waiting.size());

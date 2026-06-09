@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="com.cs.alloc.service.MessageServiceTest" time="0.185" tests="6" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="com.cs.alloc.service.SlaRiskPredictorTest" time="0.202" tests="11" errors="0" skipped="0" failures="0">
   <properties>
     <property name="java.specification.version" value="17"/>
     <property name="sun.cpu.isalist" value="amd64"/>
@@ -58,16 +58,18 @@
     <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
     <property name="java.class.version" value="61.0"/>
   </properties>
-  <testcase name="closedReject" classname="com.cs.alloc.service.MessageServiceTest" time="0.073"/>
-  <testcase name="sendOk" classname="com.cs.alloc.service.MessageServiceTest" time="0.007"/>
-  <testcase name="redisExpiredMysqlExists" classname="com.cs.alloc.service.MessageServiceTest" time="0.082">
-    <system-out><![CDATA[16:13:25.124 [main] WARN com.cs.alloc.service.MessageService -- 消息幂等兜底: Redis键过期但MySQL已存在, key=expired-key
+  <testcase name="noPublishWhenRiskLevelUnchanged" classname="com.cs.alloc.service.SlaRiskPredictorTest" time="0.016"/>
+  <testcase name="halfWaitTimeShouldBeMediumRisk" classname="com.cs.alloc.service.SlaRiskPredictorTest" time="0.007"/>
+  <testcase name="slaDeadlineConsidersVipLevel" classname="com.cs.alloc.service.SlaRiskPredictorTest" time="0.004"/>
+  <testcase name="deadHeartbeatIncreasesRisk" classname="com.cs.alloc.service.SlaRiskPredictorTest" time="0.005"/>
+  <testcase name="slaTimeoutShouldBeCritical" classname="com.cs.alloc.service.SlaRiskPredictorTest" time="0.002"/>
+  <testcase name="normalCustomerDefaultTimeout" classname="com.cs.alloc.service.SlaRiskPredictorTest" time="0.002"/>
+  <testcase name="noAgentAvailableShouldIncreaseRisk" classname="com.cs.alloc.service.SlaRiskPredictorTest" time="0.003"/>
+  <testcase name="riskLevelChangeShouldPublish" classname="com.cs.alloc.service.SlaRiskPredictorTest" time="0.011">
+    <system-out><![CDATA[16:13:25.853 [main] INFO com.cs.alloc.service.SlaRiskPredictor -- SLA风险变化: session=1, LOW -> HIGH, score=65
 ]]></system-out>
   </testcase>
-  <testcase name="redisExpiredMysqlEmpty" classname="com.cs.alloc.service.MessageServiceTest" time="0.004"/>
-  <testcase name="duplicate" classname="com.cs.alloc.service.MessageServiceTest" time="0.005">
-    <system-out><![CDATA[16:13:25.161 [main] INFO com.cs.alloc.service.MessageService -- 重复消息被拦截(Redis): key=dup
-]]></system-out>
-  </testcase>
-  <testcase name="notFound" classname="com.cs.alloc.service.MessageServiceTest" time="0.007"/>
+  <testcase name="riskLevelClassification" classname="com.cs.alloc.service.SlaRiskPredictorTest" time="0.002"/>
+  <testcase name="newEntryHasLowRisk" classname="com.cs.alloc.service.SlaRiskPredictorTest" time="0.002"/>
+  <testcase name="higherVipShorterTimeout" classname="com.cs.alloc.service.SlaRiskPredictorTest" time="0.001"/>
 </testsuite>

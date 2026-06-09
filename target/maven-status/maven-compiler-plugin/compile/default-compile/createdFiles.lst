@@ -6,10 +6,14 @@ com\cs\alloc\ws\AgentWebSocketHandler.class
 com\cs\alloc\domain\Message.class
 com\cs\alloc\domain\AllocationLog.class
 com\cs\alloc\common\GlobalExceptionHandler.class
+com\cs\alloc\mapper\RequeueAuditMapper.class
+com\cs\alloc\service\SlaRiskPredictor.class
 com\cs\alloc\Application.class
+com\cs\alloc\service\DynamicRequeueService.class
 com\cs\alloc\config\AppConfig.class
 com\cs\alloc\config\ScheduleConfig.class
 com\cs\alloc\mapper\AgentMapper.class
+com\cs\alloc\api\SlaController.class
 com\cs\alloc\service\RedisMessageQueue.class
 com\cs\alloc\common\BizException.class
 com\cs\alloc\config\MqBridgeInitializer.class
@@ -19,6 +23,7 @@ com\cs\alloc\domain\Customer.class
 com\cs\alloc\mapper\AuditLogMapper.class
 com\cs\alloc\service\AllocationEngine$AgentCandidate.class
 com\cs\alloc\mapper\AgentStateMapper.class
+com\cs\alloc\domain\SlaRiskLevel.class
 com\cs\alloc\domain\SkillGroup.class
 com\cs\alloc\service\AllocationEngine.class
 com\cs\alloc\mapper\QueueEntryMapper.class
@@ -41,3 +46,4 @@ com\cs\alloc\service\MessageQueue.class
 com\cs\alloc\domain\Session.class
 com\cs\alloc\domain\AgentState.class
 com\cs\alloc\service\RedisService.class
+com\cs\alloc\domain\RequeueAuditLog.class

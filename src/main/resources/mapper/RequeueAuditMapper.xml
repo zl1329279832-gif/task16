@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cs.alloc.mapper.RequeueAuditMapper">
+    <resultMap id="BaseResultMap" type="RequeueAuditLog">
+        <id column="id" property="id"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="action" property="action"/>
+        <result column="operator_id" property="operatorId"/>
+        <result column="operator_type" property="operatorType"/>
+        <result column="skill_group_id" property="skillGroupId"/>
+        <result column="old_position" property="oldPosition"/>
+        <result column="new_position" property="newPosition"/>
+        <result column="old_priority" property="oldPriority"/>
+        <result column="new_priority" property="newPriority"/>
+        <result column="old_risk_level" property="oldRiskLevel"/>
+        <result column="new_risk_level" property="newRiskLevel"/>
+        <result column="detail" property="detail"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO requeue_audit_log (session_id, action, operator_id, operator_type, skill_group_id,
+            old_position, new_position, old_priority, new_priority, old_risk_level, new_risk_level, detail)
+        VALUES (#{sessionId}, #{action}, #{operatorId}, #{operatorType}, #{skillGroupId},
+            #{oldPosition}, #{newPosition}, #{oldPriority}, #{newPriority}, #{oldRiskLevel}, #{newRiskLevel}, #{detail})
+    </insert>
+    <select id="selectBySessionId" resultMap="BaseResultMap">
+        SELECT * FROM requeue_audit_log WHERE session_id = #{sessionId} ORDER BY created_at DESC
+    </select>
+    <select id="selectByAction" resultMap="BaseResultMap">
+        SELECT * FROM requeue_audit_log WHERE action = #{action} ORDER BY created_at DESC LIMIT #{offset}, #{limit}
+    </select>
+    <select id="selectRecent" resultMap="BaseResultMap">
+        SELECT * FROM requeue_audit_log ORDER BY created_at DESC LIMIT #{offset}, #{limit}
+    </select>
+</mapper>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="com.cs.alloc.service.MessageServiceTest" time="0.185" tests="6" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.795" tests="17" errors="0" skipped="0" failures="0">
   <properties>
     <property name="java.specification.version" value="17"/>
     <property name="sun.cpu.isalist" value="amd64"/>
@@ -58,16 +58,44 @@
     <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
     <property name="java.class.version" value="61.0"/>
   </properties>
-  <testcase name="closedReject" classname="com.cs.alloc.service.MessageServiceTest" time="0.073"/>
-  <testcase name="sendOk" classname="com.cs.alloc.service.MessageServiceTest" time="0.007"/>
-  <testcase name="redisExpiredMysqlExists" classname="com.cs.alloc.service.MessageServiceTest" time="0.082">
-    <system-out><![CDATA[16:13:25.124 [main] WARN com.cs.alloc.service.MessageService -- 消息幂等兜底: Redis键过期但MySQL已存在, key=expired-key
+  <testcase name="agentOfflineShouldTriggerFallback" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.477">
+    <system-out><![CDATA[16:13:24.549 [main] INFO com.cs.alloc.service.DynamicRequeueService -- 技能组降级: session=10, 2 -> 1
 ]]></system-out>
   </testcase>
-  <testcase name="redisExpiredMysqlEmpty" classname="com.cs.alloc.service.MessageServiceTest" time="0.004"/>
-  <testcase name="duplicate" classname="com.cs.alloc.service.MessageServiceTest" time="0.005">
-    <system-out><![CDATA[16:13:25.161 [main] INFO com.cs.alloc.service.MessageService -- 重复消息被拦截(Redis): key=dup
+  <testcase name="noDoubleFallback" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.014"/>
+  <testcase name="noFallbackWhenFallbackGroupAlsoEmpty" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.008"/>
+  <testcase name="reorderPinnedOverHighRisk" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.005"/>
+  <testcase name="skillFallbackWhenNoAgent" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.021">
+    <system-out><![CDATA[16:13:24.715 [main] INFO com.cs.alloc.service.DynamicRequeueService -- 技能组降级: session=10, 2 -> 1
 ]]></system-out>
   </testcase>
-  <testcase name="notFound" classname="com.cs.alloc.service.MessageServiceTest" time="0.007"/>
+  <testcase name="multiSkillGroupConcurrentEnqueue" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.008"/>
+  <testcase name="queryAuditBySession" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.023"/>
+  <testcase name="vipJumpShouldBoostPriority" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.011">
+    <system-out><![CDATA[16:13:24.764 [main] INFO com.cs.alloc.service.DynamicRequeueService -- VIP插队: session=10, vipLevel=3, priority 50 -> 3050
+]]></system-out>
+  </testcase>
+  <testcase name="multipleVipRankingOrder" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.01">
+    <system-out><![CDATA[16:13:24.771 [main] INFO com.cs.alloc.service.DynamicRequeueService -- VIP插队: session=10, vipLevel=1, priority 50 -> 1050
+16:13:24.773 [main] INFO com.cs.alloc.service.DynamicRequeueService -- VIP插队: session=11, vipLevel=3, priority 50 -> 3050
+]]></system-out>
+  </testcase>
+  <testcase name="unpinTopShouldRestore" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.013">
+    <system-out><![CDATA[16:13:24.784 [main] INFO com.cs.alloc.service.DynamicRequeueService -- 取消置顶: session=10, operator=supervisor1
+]]></system-out>
+  </testcase>
+  <testcase name="noFallbackWhenAgentAvailable" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.004"/>
+  <testcase name="reorderByRiskPrioritizesHighRisk" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.017"/>
+  <testcase name="vipJumpIgnoresNonVip" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.008"/>
+  <testcase name="pinTopShouldPromoteToFront" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.013">
+    <system-out><![CDATA[16:13:24.938 [main] INFO com.cs.alloc.service.DynamicRequeueService -- 人工置顶: session=10, operator=supervisor1
+]]></system-out>
+  </testcase>
+  <testcase name="queryAuditByAction" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.012"/>
+  <testcase name="allRequeueActionsAreAudited" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.01">
+    <system-out><![CDATA[16:13:24.962 [main] INFO com.cs.alloc.service.DynamicRequeueService -- 人工置顶: session=10, operator=op1
+16:13:24.966 [main] INFO com.cs.alloc.service.DynamicRequeueService -- 取消置顶: session=10, operator=op1
+]]></system-out>
+  </testcase>
+  <testcase name="pinTopNotInQueueShouldThrow" classname="com.cs.alloc.service.DynamicRequeueServiceTest" time="0.005"/>
 </testsuite>

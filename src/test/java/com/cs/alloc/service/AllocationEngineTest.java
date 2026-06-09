@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AllocationEngineTest {
@@ -24,11 +25,12 @@ class AllocationEngineTest {
     @Mock private com.cs.alloc.mapper.AllocationLogMapper allocationLogMapper;
     @Mock private RedisService redisService;
     @Mock private MessageQueue messageQueue;
+    @Mock private DynamicRequeueService dynamicRequeueService;
     private AllocationEngine engine;
 
     @BeforeEach
     void setUp() {
-        engine = new AllocationEngine(queueService, agentMapper, agentStateMapper, sessionMapper, allocationLogMapper, redisService, messageQueue);
+        engine = new AllocationEngine(queueService, agentMapper, agentStateMapper, sessionMapper, allocationLogMapper, redisService, messageQueue, dynamicRequeueService);
         ReflectionTestUtils.setField(engine, "skillMatchBonus", 50);
         ReflectionTestUtils.setField(engine, "loadPenalty", 10);
     }

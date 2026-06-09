@@ -23,6 +23,8 @@ public class RedisService {
     private static final String KEY_IDEMPOTENCY    = "cs:idempotency:";
     private static final String KEY_LOCK           = "cs:lock:";
     private static final String KEY_HEARTBEAT      = "cs:agent:heartbeat:";
+    private static final String KEY_QUEUE_SNAPSHOT = "cs:queue:snapshot:";
+    private static final String KEY_SLA_RISK       = "cs:sla:risk:";
 
     private final StringRedisTemplate redis;
 
@@ -193,5 +195,42 @@ public class RedisService {
         if (owner == null) return;
         redis.execute(new DefaultRedisScript<>(UNLOCK_LUA, Long.class),
                 List.of(KEY_LOCK + key), owner);
+    }
+
+    // ==================== SLA 风险 & 队列快照 ====================
+
+    public void saveSlaRisk(long sessionId, int riskScore, String riskLevel, String slaDeadline) {
+        Map<String, String> data = Map.of(
+                "riskScore", String.valueOf(riskScore),
+                "riskLevel", riskLevel,
+                "slaDeadline", slaDeadline,
+                "updatedAt", Instant.now().toString()
+        );
+        redis.opsForHash().putAll(KEY_SLA_RISK + sessionId, data);
+        redis.expire(KEY_SLA_RISK + sessionId, Duration.ofHours(2));
+    }
+
+    public Map<Object, Object> getSlaRisk(long sessionId) {
+        return redis.opsForHash().entries(KEY_SLA_RISK + sessionId);
+    }
+
+    public void removeSlaRisk(long sessionId) {
+        redis.delete(KEY_SLA_RISK + sessionId);
+    }
+
+    public void saveQueueSnapshot(long skillGroupId, String snapshotJson) {
+        redis.opsForValue().set(KEY_QUEUE_SNAPSHOT + skillGroupId, snapshotJson, Duration.ofMinutes(30));
+    }
+
+    public String getQueueSnapshot(long skillGroupId) {
+        return redis.opsForValue().get(KEY_QUEUE_SNAPSHOT + skillGroupId);
+    }
+
+    public Set<String> getQueueMembersWithScores(long skillGroupId) {
+        return redis.opsForZSet().range(KEY_QUEUE_SET + skillGroupId, 0, -1);
+    }
+
+    public Double getQueueScore(long skillGroupId, long sessionId) {
+        return redis.opsForZSet().score(KEY_QUEUE_SET + skillGroupId, String.valueOf(sessionId));
     }
 }

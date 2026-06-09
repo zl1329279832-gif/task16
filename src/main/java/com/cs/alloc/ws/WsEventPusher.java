@@ -115,6 +115,22 @@ public class WsEventPusher {
             try { Map<String, Object> data = MAPPER.readValue(msg, Map.class); broadcastToAgents("system.notice", data); }
             catch (Exception e) { log.error("SYSTEM_NOTICE事件处理失败", e); }
         });
+        mq.subscribe(MessageQueue.Topics.SLA_RISK_CHANGED, msg -> {
+            try {
+                Map<String, Object> data = MAPPER.readValue(msg, Map.class);
+                // 推送给对应客户
+                Object cid = data.get("customerId");
+                if (cid != null) pushToCustomer(((Number) cid).longValue(), "sla.risk_changed", data);
+                // 广播给所有客服 (主管监控面板)
+                broadcastToAgents("sla.risk_changed", data);
+            } catch (Exception e) { log.error("SLA_RISK_CHANGED事件处理失败", e); }
+        });
+        mq.subscribe(MessageQueue.Topics.QUEUE_REORDERED, msg -> {
+            try {
+                Map<String, Object> data = MAPPER.readValue(msg, Map.class);
+                broadcastToAgents("queue.reordered", data);
+            } catch (Exception e) { log.error("QUEUE_REORDERED事件处理失败", e); }
+        });
         log.info("MQ → WebSocket 事件桥接初始化完成");
     }
 }

@@ -43,6 +43,16 @@ cs:
     interval-ms: 2000
     skill-match-score: 50
     load-penalty: 10
+  sla:
+    default-timeout-seconds: 1800
+    vip-timeout-multiplier: 0.5
+    risk-scan-interval-ms: 5000
+    snapshot-interval-ms: 10000
+    medium-threshold: 30
+    high-threshold: 60
+    critical-threshold: 85
+    avg-handle-seconds: 300
+    fallback-skill-group-id: 1
   mq:
     type: memory
 
