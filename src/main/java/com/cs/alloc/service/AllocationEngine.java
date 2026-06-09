@@ -72,6 +72,10 @@ public class AllocationEngine {
         List<AgentCandidate> candidates = new ArrayList<>();
         for (Agent agent : onlineAgents) {
             if (!redisService.isAgentAvailable(agent.getId())) continue;
+            if (!redisService.isHeartbeatAlive(agent.getId())) {
+                log.warn("客服 {} 心跳过期, 跳过分配", agent.getId());
+                continue;
+            }
             if (!redisService.hasCapacity(agent.getId())) continue;
             AgentState state = agentStateMapper.selectByAgentId(agent.getId());
             int load = state != null ? state.getCurrentLoad() : 0;

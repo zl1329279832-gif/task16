@@ -5,6 +5,7 @@ import com.cs.alloc.domain.Session;
 import com.cs.alloc.mapper.QueueEntryMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
@@ -30,7 +31,14 @@ public class QueueService {
         entry.setPriorityScore(priorityScore);
         entry.setPosition(position);
         entry.setJoinedAt(LocalDateTime.now());
-        queueEntryMapper.insert(entry);
+        try {
+            queueEntryMapper.insert(entry);
+        } catch (DuplicateKeyException e) {
+            log.info("并发入队拦截, sessionId={}", session.getId());
+            QueueEntry duplicate = queueEntryMapper.selectBySessionId(session.getId());
+            if (duplicate != null) return duplicate;
+            throw e;
+        }
         redisService.addToQueue(session.getSkillGroupId(), session.getId(), priorityScore);
         log.info("客户入队: sessionId={}, position={}", session.getId(), position);
         return entry;

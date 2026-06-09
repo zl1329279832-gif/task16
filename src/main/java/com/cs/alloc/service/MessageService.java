@@ -7,6 +7,7 @@ import com.cs.alloc.mapper.MessageMapper;
 import com.cs.alloc.mapper.SessionMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
@@ -36,7 +37,14 @@ public class MessageService {
         Message message = new Message();
         message.setSessionId(sessionId); message.setSenderId(senderId); message.setSenderType(senderType);
         message.setContent(content); message.setMsgType(msgType != null ? msgType : "TEXT"); message.setIdempotencyKey(idempotencyKey);
-        messageMapper.insert(message);
+        try {
+            messageMapper.insert(message);
+        } catch (DuplicateKeyException e) {
+            log.info("Redis幂等键已过期, MySQL拦截重复消息: key={}", idempotencyKey);
+            Message existing = messageMapper.selectByIdempotencyKey(idempotencyKey);
+            if (existing != null) return existing;
+            throw new BizException("消息发送冲突，请重试");
+        }
         messageQueue.publish(MessageQueue.Topics.CHAT_MESSAGE, String.format("{\"id\":%d,\"sessionId\":%d,\"senderId\":\"%s\",\"senderType\":\"%s\",\"content\":\"%s\",\"msgType\":\"%s\"}", message.getId(), sessionId, senderId, senderType, content.replace("\"", "\\\"").replace("\n", "\\n"), message.getMsgType()));
         return message;
     }

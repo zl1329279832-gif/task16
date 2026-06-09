@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 import java.time.Duration;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -54,6 +55,17 @@ class MessageServiceTest {
     void notFound() {
         when(sessionMapper.selectById(999L)).thenReturn(null);
         assertThatThrownBy(() -> svc.sendMessage(999L, "1", "CUSTOMER", "hi", "TEXT", null)).isInstanceOf(BizException.class);
+    }
+
+    @Test @DisplayName("Redis幂等键过期后MySQL DuplicateKey降级")
+    void duplicateKeyFallback() {
+        when(sessionMapper.selectById(1L)).thenReturn(activeSession());
+        when(redisService.trySetIdempotencyKey(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+        doThrow(new DuplicateKeyException("Duplicate entry")).when(messageMapper).insert(any());
+        Message ex = new Message(); ex.setId(888L); ex.setContent("hi");
+        when(messageMapper.selectByIdempotencyKey("key1")).thenReturn(ex);
+        Message result = svc.sendMessage(1L, "100", "CUSTOMER", "hi", "TEXT", "key1");
+        assertThat(result.getId()).isEqualTo(888L);
     }
 
     private Session activeSession() { Session s = new Session(); s.setId(1L); s.setSessionNo("CS1"); s.setStatus("ACTIVE"); s.setCustomerId(100L); s.setAgentId(10L); return s; }

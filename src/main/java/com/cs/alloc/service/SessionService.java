@@ -27,24 +27,35 @@ public class SessionService {
 
     @Transactional
     public Session createSession(long customerId, long skillGroupId) {
-        redisService.getCustomerSession(customerId).ifPresent(existingId -> {
-            Session existing = sessionMapper.selectById(existingId);
-            if (existing != null && !existing.getStatus().equals("CLOSED")) {
-                throw new BizException("您已有进行中的会话: " + existing.getSessionNo());
+        if (!redisService.tryLock("customer:create:" + customerId, Duration.ofSeconds(10))) {
+            throw new BizException("正在处理中，请勿重复提交");
+        }
+        try {
+            redisService.getCustomerSession(customerId).ifPresent(existingId -> {
+                Session existing = sessionMapper.selectById(existingId);
+                if (existing != null && !existing.getStatus().equals("CLOSED")) {
+                    throw new BizException("您已有进行中的会话: " + existing.getSessionNo());
+                }
+            });
+            if (sessionMapper.countNonClosedByCustomerId(customerId) > 0) {
+                throw new BizException("您已有进行中的会话");
             }
-        });
-        Customer customer = customerMapper.selectById(customerId);
-        if (customer == null) throw new BizException("客户不存在");
-        Session session = new Session();
-        session.setSessionNo(generateSessionNo());
-        session.setCustomerId(customerId);
-        session.setSkillGroupId(skillGroupId);
-        session.setStatus("WAITING");
-        session.setPriorityScore(0);
-        sessionMapper.insert(session);
-        queueService.join(session, customer.getVipLevel());
-        audit("SYSTEM", "SYSTEM", "SESSION_CREATE", "SESSION", String.valueOf(session.getId()), String.format("客户%d进入排队, 技能组%d", customerId, skillGroupId));
-        return session;
+            Customer customer = customerMapper.selectById(customerId);
+            if (customer == null) throw new BizException("客户不存在");
+            Session session = new Session();
+            session.setSessionNo(generateSessionNo());
+            session.setCustomerId(customerId);
+            session.setSkillGroupId(skillGroupId);
+            session.setStatus("WAITING");
+            session.setPriorityScore(0);
+            sessionMapper.insert(session);
+            redisService.setCustomerSession(customerId, session.getId());
+            queueService.join(session, customer.getVipLevel());
+            audit("SYSTEM", "SYSTEM", "SESSION_CREATE", "SESSION", String.valueOf(session.getId()), String.format("客户%d进入排队, 技能组%d", customerId, skillGroupId));
+            return session;
+        } finally {
+            redisService.unlock("customer:create:" + customerId);
+        }
     }
 
     @Transactional
@@ -55,6 +66,10 @@ public class SessionService {
         if (!redisService.hasCapacity(agentId)) throw new BizException("客服已达最大接待量");
         if (!redisService.tryLock("session:" + sessionId, Duration.ofSeconds(10))) throw new BizException("会话正在被分配");
         try {
+            session = sessionMapper.selectById(sessionId);
+            if (session == null || !"WAITING".equals(session.getStatus())) {
+                throw new BizException("会话已被其他客服接入");
+            }
             sessionMapper.assignAgent(sessionId, agentId, "ASSIGNED");
             redisService.incrementAgentLoad(agentId);
             redisService.bindSessionToAgent(sessionId, agentId);
@@ -77,19 +92,35 @@ public class SessionService {
         if (!redisService.tryLock("session:" + sessionId, Duration.ofSeconds(10))) throw new BizException("会话正在操作中");
         try {
             long currentAgentId = session.getAgentId();
-            sessionMapper.updateStatus(sessionId, "TRANSFERRING");
-            redisService.unbindSessionFromAgent(sessionId, currentAgentId);
-            redisService.decrementAgentLoad(currentAgentId);
-            agentStateMapper.updateLoad(currentAgentId, redisService.getAgentLoad(currentAgentId));
             if (toAgentId != null) {
                 Agent toAgent = requireAgent(toAgentId);
+                if (!redisService.isAgentAvailable(toAgentId)) throw new BizException("目标客服不在线");
+                if (!redisService.isHeartbeatAlive(toAgentId)) throw new BizException("目标客服心跳超时");
                 if (!redisService.hasCapacity(toAgentId)) throw new BizException("目标客服已满");
-                sessionMapper.assignAgent(sessionId, toAgentId, "ASSIGNED");
-                redisService.incrementAgentLoad(toAgentId);
-                redisService.bindSessionToAgent(sessionId, toAgentId);
-                agentStateMapper.updateLoad(toAgentId, redisService.getAgentLoad(toAgentId));
+                sessionMapper.updateStatus(sessionId, "TRANSFERRING");
+                redisService.unbindSessionFromAgent(sessionId, currentAgentId);
+                redisService.decrementAgentLoad(currentAgentId);
+                agentStateMapper.updateLoad(currentAgentId, redisService.getAgentLoad(currentAgentId));
+                try {
+                    sessionMapper.assignAgent(sessionId, toAgentId, "ASSIGNED");
+                    redisService.incrementAgentLoad(toAgentId);
+                    redisService.bindSessionToAgent(sessionId, toAgentId);
+                    agentStateMapper.updateLoad(toAgentId, redisService.getAgentLoad(toAgentId));
+                } catch (Exception e) {
+                    redisService.bindSessionToAgent(sessionId, currentAgentId);
+                    redisService.incrementAgentLoad(currentAgentId);
+                    agentStateMapper.updateLoad(currentAgentId, redisService.getAgentLoad(currentAgentId));
+                    throw new BizException("转接失败，已回滚: " + e.getMessage());
+                }
             } else {
-                if (toSkillGroupId != null) session.setSkillGroupId(toSkillGroupId);
+                sessionMapper.updateStatus(sessionId, "TRANSFERRING");
+                redisService.unbindSessionFromAgent(sessionId, currentAgentId);
+                redisService.decrementAgentLoad(currentAgentId);
+                agentStateMapper.updateLoad(currentAgentId, redisService.getAgentLoad(currentAgentId));
+                if (toSkillGroupId != null) {
+                    session.setSkillGroupId(toSkillGroupId);
+                    sessionMapper.updateSkillGroupId(sessionId, toSkillGroupId);
+                }
                 session.setTransferFrom(currentAgentId);
                 sessionMapper.updateStatus(sessionId, "WAITING");
                 queueService.rejoin(session);
@@ -188,16 +219,30 @@ public class SessionService {
         List<Session> activeSessions = sessionMapper.selectByAgentIdAndStatus(agentId, "ACTIVE");
         List<Session> assignedSessions = sessionMapper.selectByAgentIdAndStatus(agentId, "ASSIGNED");
         activeSessions.addAll(assignedSessions);
+        int released = 0;
         for (Session s : activeSessions) {
-            sessionMapper.updateStatus(s.getId(), "WAITING");
-            redisService.unbindSessionFromAgent(s.getId(), agentId);
-            queueService.rejoin(s);
-            AllocationLog allocLog = new AllocationLog();
-            allocLog.setSessionId(s.getId()); allocLog.setAgentId(agentId); allocLog.setAction("RELEASE"); allocLog.setReason("客服离线");
-            allocationLogMapper.insert(allocLog);
+            if (!redisService.tryLock("session:" + s.getId(), Duration.ofSeconds(5))) {
+                log.warn("客服离线-会话{}锁定失败, 跳过", s.getId());
+                continue;
+            }
+            try {
+                Session current = sessionMapper.selectById(s.getId());
+                if (current == null || "CLOSED".equals(current.getStatus()) || !Long.valueOf(agentId).equals(current.getAgentId())) {
+                    continue;
+                }
+                sessionMapper.updateStatus(s.getId(), "WAITING");
+                redisService.unbindSessionFromAgent(s.getId(), agentId);
+                queueService.rejoin(s);
+                AllocationLog allocLog = new AllocationLog();
+                allocLog.setSessionId(s.getId()); allocLog.setAgentId(agentId); allocLog.setAction("RELEASE"); allocLog.setReason("客服离线");
+                allocationLogMapper.insert(allocLog);
+                released++;
+            } finally {
+                redisService.unlock("session:" + s.getId());
+            }
         }
         agentStateMapper.updateLoad(agentId, 0);
-        audit(String.valueOf(agentId), "AGENT", "AGENT_OFFLINE", "AGENT", String.valueOf(agentId), String.format("客服离线, 退回%d个会话", activeSessions.size()));
+        audit(String.valueOf(agentId), "AGENT", "AGENT_OFFLINE", "AGENT", String.valueOf(agentId), String.format("客服离线, 退回%d个会话", released));
         messageQueue.publish(MessageQueue.Topics.AGENT_STATUS, String.format("{\"agentId\":%d,\"status\":\"OFFLINE\"}", agentId));
     }
 

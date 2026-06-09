@@ -27,15 +27,20 @@ class SessionServiceTest {
 
     @Test @DisplayName("创建会话: 正常入队")
     void createSession() {
+        when(redisService.tryLock(eq("customer:create:1"), any())).thenReturn(true);
         when(redisService.getCustomerSession(1L)).thenReturn(java.util.Optional.empty());
+        when(sessionMapper.countNonClosedByCustomerId(1L)).thenReturn(0);
         when(customerMapper.selectById(1L)).thenReturn(customer(1L, 2));
+        doAnswer(inv -> { inv.getArgument(0, Session.class).setId(99L); return null; }).when(sessionMapper).insert(any());
         Session s = svc.createSession(1L, 1L);
         assertThat(s.getStatus()).isEqualTo("WAITING");
         verify(queueService).join(any(), eq(2));
+        verify(redisService).setCustomerSession(1L, 99L);
     }
 
     @Test @DisplayName("创建会话: 已有活跃会话拒绝")
     void createSessionReject() {
+        when(redisService.tryLock(eq("customer:create:1"), any())).thenReturn(true);
         when(redisService.getCustomerSession(1L)).thenReturn(java.util.Optional.of(999L));
         Session ex = new Session(); ex.setId(999L); ex.setStatus("ACTIVE"); ex.setSessionNo("CS123");
         when(sessionMapper.selectById(999L)).thenReturn(ex);
@@ -45,8 +50,9 @@ class SessionServiceTest {
     @Test @DisplayName("接入: 正常分配")
     void acceptSession() {
         when(sessionMapper.selectById(1L))
-            .thenReturn(session(1L, "WAITING", 100L, null))
-            .thenReturn(session(1L, "ASSIGNED", 100L, 10L));
+            .thenReturn(session(1L, "WAITING", 100L, null))   // 锁外读取
+            .thenReturn(session(1L, "WAITING", 100L, null))   // 锁内重新校验
+            .thenReturn(session(1L, "ASSIGNED", 100L, 10L));  // 最终返回
         when(agentMapper.selectById(10L)).thenReturn(agent(10L, false));
         when(redisService.hasCapacity(10L)).thenReturn(true);
         when(redisService.tryLock(anyString(), any())).thenReturn(true);
@@ -73,6 +79,8 @@ class SessionServiceTest {
     void transferToAgent() {
         when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ACTIVE", 100L, 10L));
         when(agentMapper.selectById(20L)).thenReturn(agent(20L, false));
+        when(redisService.isAgentAvailable(20L)).thenReturn(true);
+        when(redisService.isHeartbeatAlive(20L)).thenReturn(true);
         when(redisService.hasCapacity(20L)).thenReturn(true);
         when(redisService.tryLock(anyString(), any())).thenReturn(true);
         when(redisService.getAgentLoad(anyLong())).thenReturn(1);
@@ -114,6 +122,46 @@ class SessionServiceTest {
         when(redisService.getAgentLoad(10L)).thenReturn(0);
         svc.closeSession(1L, "10", "AGENT", "完成");
         verify(sessionMapper).close(1L);
+    }
+
+    @Test @DisplayName("转接: 目标客服不在线时拒绝且不解绑")
+    void transferTargetOfflineRollback() {
+        when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ACTIVE", 100L, 10L));
+        when(redisService.tryLock(anyString(), any())).thenReturn(true);
+        when(agentMapper.selectById(20L)).thenReturn(agent(20L, false));
+        when(redisService.isAgentAvailable(20L)).thenReturn(false);
+        assertThatThrownBy(() -> svc.transferSession(1L, 10L, 20L, null, "test"))
+                .isInstanceOf(BizException.class).hasMessageContaining("不在线");
+        verify(redisService, never()).unbindSessionFromAgent(anyLong(), anyLong());
+    }
+
+    @Test @DisplayName("转接: 目标心跳过期拒绝")
+    void transferTargetHeartbeatExpired() {
+        when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ACTIVE", 100L, 10L));
+        when(redisService.tryLock(anyString(), any())).thenReturn(true);
+        when(agentMapper.selectById(20L)).thenReturn(agent(20L, false));
+        when(redisService.isAgentAvailable(20L)).thenReturn(true);
+        when(redisService.isHeartbeatAlive(20L)).thenReturn(false);
+        assertThatThrownBy(() -> svc.transferSession(1L, 10L, 20L, null, "test"))
+                .isInstanceOf(BizException.class).hasMessageContaining("心跳超时");
+        verify(redisService, never()).unbindSessionFromAgent(anyLong(), anyLong());
+    }
+
+    @Test @DisplayName("转接: 换技能组持久化")
+    void transferToQueueWithSkillGroupChange() {
+        when(sessionMapper.selectById(1L)).thenReturn(session(1L, "ACTIVE", 100L, 10L));
+        when(redisService.tryLock(anyString(), any())).thenReturn(true);
+        when(redisService.getAgentLoad(anyLong())).thenReturn(0);
+        svc.transferSession(1L, 10L, null, 2L, "换组");
+        verify(sessionMapper).updateSkillGroupId(1L, 2L);
+        verify(queueService).rejoin(any());
+    }
+
+    @Test @DisplayName("创建会话: 并发锁拦截")
+    void createSessionConcurrentLock() {
+        when(redisService.tryLock(eq("customer:create:1"), any())).thenReturn(false);
+        assertThatThrownBy(() -> svc.createSession(1L, 1L))
+                .isInstanceOf(BizException.class).hasMessageContaining("请勿重复提交");
     }
 
     private Customer customer(long id, int vip) { Customer c = new Customer(); c.setId(id); c.setVipLevel(vip); return c; }

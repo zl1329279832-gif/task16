@@ -1,8 +1,10 @@
 package com.cs.alloc.ws;
 
 import com.cs.alloc.domain.Message;
+import com.cs.alloc.domain.Session;
 import com.cs.alloc.service.MessageService;
 import com.cs.alloc.service.QueueService;
+import com.cs.alloc.service.RedisService;
 import com.cs.alloc.service.SessionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +14,7 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import java.net.URI;
+import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
@@ -21,9 +24,11 @@ public class CustomerWebSocketHandler extends TextWebSocketHandler {
     private final WsEventPusher pusher;
     private final MessageService messageService;
     private final SessionService sessionService;
+    private final RedisService redisService;
+    private final QueueService queueService;
 
-    public CustomerWebSocketHandler(WsEventPusher pusher, MessageService messageService, SessionService sessionService, QueueService queueService) {
-        this.pusher = pusher; this.messageService = messageService; this.sessionService = sessionService;
+    public CustomerWebSocketHandler(WsEventPusher pusher, MessageService messageService, SessionService sessionService, QueueService queueService, RedisService redisService) {
+        this.pusher = pusher; this.messageService = messageService; this.sessionService = sessionService; this.redisService = redisService; this.queueService = queueService;
     }
 
     @Override
@@ -31,7 +36,26 @@ public class CustomerWebSocketHandler extends TextWebSocketHandler {
         String customerId = extractParam(session, "customerId");
         if (customerId == null) { try { session.close(CloseStatus.BAD_DATA); } catch (Exception ignored) {} return; }
         pusher.registerCustomer(customerId, session);
-        try { session.sendMessage(new TextMessage(MAPPER.writeValueAsString(Map.of("event", "connected", "data", Map.of("customerId", customerId), "timestamp", System.currentTimeMillis())))); } catch (Exception ignored) {}
+        try {
+            Map<String, Object> ackData = new HashMap<>();
+            ackData.put("customerId", customerId);
+            java.util.Optional<Long> activeSessionId = redisService.getCustomerSession(Long.parseLong(customerId));
+            if (activeSessionId.isPresent()) {
+                Session activeSession = sessionService.getSession(activeSessionId.get());
+                if (activeSession != null && !"CLOSED".equals(activeSession.getStatus())) {
+                    Map<String, Object> restoreData = new HashMap<>();
+                    restoreData.put("sessionId", activeSession.getId());
+                    restoreData.put("sessionNo", activeSession.getSessionNo());
+                    restoreData.put("status", activeSession.getStatus());
+                    restoreData.put("agentId", activeSession.getAgentId());
+                    if ("WAITING".equals(activeSession.getStatus())) {
+                        restoreData.put("queuePosition", queueService.getPosition(activeSession.getId()));
+                    }
+                    ackData.put("activeSession", restoreData);
+                }
+            }
+            session.sendMessage(new TextMessage(MAPPER.writeValueAsString(Map.of("event", "connected", "data", ackData, "timestamp", System.currentTimeMillis()))));
+        } catch (Exception e) { log.error("发送连接确认失败", e); }
     }
 
     @Override

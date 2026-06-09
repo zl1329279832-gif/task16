@@ -161,6 +161,10 @@ public class RedisService {
         return val != null ? Optional.of(Instant.parse(val)) : Optional.empty();
     }
 
+    public boolean isHeartbeatAlive(long agentId) {
+        return Boolean.TRUE.equals(redis.hasKey(KEY_HEARTBEAT + agentId));
+    }
+
     public boolean tryLock(String key, Duration ttl) {
         Boolean result = redis.opsForValue().setIfAbsent(KEY_LOCK + key, "1", ttl);
         return Boolean.TRUE.equals(result);

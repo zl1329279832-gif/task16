@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="com.cs.alloc.service.SessionServiceTest" time="0.128" tests="14" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="com.cs.alloc.service.ConcurrencyTest" time="0.399" tests="9" errors="0" skipped="0" failures="0">
   <properties>
     <property name="java.specification.version" value="17"/>
     <property name="sun.cpu.isalist" value="amd64"/>
@@ -58,18 +58,26 @@
     <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
     <property name="java.class.version" value="61.0"/>
   </properties>
-  <testcase name="transferTargetOfflineRollback" classname="com.cs.alloc.service.SessionServiceTest" time="0.016"/>
-  <testcase name="acceptFull" classname="com.cs.alloc.service.SessionServiceTest" time="0.004"/>
-  <testcase name="takeoverOk" classname="com.cs.alloc.service.SessionServiceTest" time="0.007"/>
-  <testcase name="createSessionConcurrentLock" classname="com.cs.alloc.service.SessionServiceTest" time="0.004"/>
-  <testcase name="createSession" classname="com.cs.alloc.service.SessionServiceTest" time="0.022"/>
-  <testcase name="takeoverReject" classname="com.cs.alloc.service.SessionServiceTest" time="0.005"/>
-  <testcase name="transferToAgent" classname="com.cs.alloc.service.SessionServiceTest" time="0.009"/>
-  <testcase name="transferToQueue" classname="com.cs.alloc.service.SessionServiceTest" time="0.005"/>
-  <testcase name="acceptSession" classname="com.cs.alloc.service.SessionServiceTest" time="0.005"/>
-  <testcase name="transferToQueueWithSkillGroupChange" classname="com.cs.alloc.service.SessionServiceTest" time="0.005"/>
-  <testcase name="closeSession" classname="com.cs.alloc.service.SessionServiceTest" time="0.008"/>
-  <testcase name="createSessionReject" classname="com.cs.alloc.service.SessionServiceTest" time="0.006"/>
-  <testcase name="transferTargetHeartbeatExpired" classname="com.cs.alloc.service.SessionServiceTest" time="0.005"/>
-  <testcase name="acceptReject" classname="com.cs.alloc.service.SessionServiceTest" time="0.011"/>
+  <testcase name="transfer_targetOffline_rollback" classname="com.cs.alloc.service.ConcurrencyTest" time="0.244"/>
+  <testcase name="createSession_concurrentDuplicate_blocked" classname="com.cs.alloc.service.ConcurrencyTest" time="0.01"/>
+  <testcase name="transfer_targetHeartbeatExpired_rejected" classname="com.cs.alloc.service.ConcurrencyTest" time="0.026"/>
+  <testcase name="createSession_mysqlFallback_rejectsExisting" classname="com.cs.alloc.service.ConcurrencyTest" time="0.009"/>
+  <testcase name="message_redisExpired_mysqlDuplicate_idempotent" classname="com.cs.alloc.service.ConcurrencyTest" time="0.023">
+    <system-out><![CDATA[12:14:24.841 [main] INFO com.cs.alloc.service.MessageService -- Redis幂等键已过期, MySQL拦截重复消息: key=dup-key
+]]></system-out>
+  </testcase>
+  <testcase name="queueJoin_concurrent_idempotent" classname="com.cs.alloc.service.ConcurrencyTest" time="0.007">
+    <system-out><![CDATA[12:14:24.859 [main] INFO com.cs.alloc.service.QueueService -- 并发入队拦截, sessionId=1
+]]></system-out>
+  </testcase>
+  <testcase name="allocation_skipsExpiredHeartbeat" classname="com.cs.alloc.service.ConcurrencyTest" time="0.014">
+    <system-out><![CDATA[12:14:24.871 [main] WARN com.cs.alloc.service.AllocationEngine -- 客服 1 心跳过期, 跳过分配
+12:14:24.873 [main] INFO com.cs.alloc.service.AllocationEngine -- 分配成功: session=100 -> agent=2
+]]></system-out>
+  </testcase>
+  <testcase name="acceptSession_lockRecheck_preventsDoubleAssign" classname="com.cs.alloc.service.ConcurrencyTest" time="0.024"/>
+  <testcase name="agentOffline_perSessionLock" classname="com.cs.alloc.service.ConcurrencyTest" time="0.02">
+    <system-out><![CDATA[12:14:24.925 [main] WARN com.cs.alloc.service.SessionService -- 客服离线-会话1锁定失败, 跳过
+]]></system-out>
+  </testcase>
 </testsuite>

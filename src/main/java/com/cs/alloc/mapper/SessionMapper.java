@@ -16,4 +16,6 @@ public interface SessionMapper {
     void assignAgent(@Param("id") Long id, @Param("agentId") Long agentId, @Param("status") String status);
     void close(@Param("id") Long id);
     int countActiveByAgentId(@Param("agentId") Long agentId);
+    void updateSkillGroupId(@Param("id") Long id, @Param("skillGroupId") Long skillGroupId);
+    int countNonClosedByCustomerId(@Param("customerId") Long customerId);
 }

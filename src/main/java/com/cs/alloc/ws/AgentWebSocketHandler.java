@@ -83,7 +83,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         String agentId = extractParam(session, "agentId");
         if (agentId == null) return;
         pusher.unregisterAgent(agentId, session);
-        if (status != CloseStatus.NORMAL) {
+        if (status != CloseStatus.NORMAL && !pusher.isAgentConnected(agentId)) {
             disconnectedAgents.put(agentId, Instant.now());
             reconnectScheduler.schedule(() -> {
                 Instant dt = disconnectedAgents.get(agentId);
