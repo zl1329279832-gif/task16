@@ -8,4 +8,5 @@ import org.apache.ibatis.annotations.Param;
 public interface SlaRiskHistoryMapper {
     void insert(SlaRiskHistory history);
     void deleteOlderThan(@Param("olderThanSeconds") long olderThanSeconds);
+    SlaRiskHistory selectLatestBySessionId(@Param("sessionId") Long sessionId);
 }

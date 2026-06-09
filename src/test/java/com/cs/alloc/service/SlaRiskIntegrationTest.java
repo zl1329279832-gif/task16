@@ -33,6 +33,7 @@ class SlaRiskIntegrationTest {
     @Mock private CustomerMapper customerMapper;
     @Mock private AuditLogMapper auditLogMapper;
     @Mock private RedisService redisService;
+    @Mock private SessionMapper sessionMapper;
     private SlaRiskProperties properties;
 
     @BeforeEach
@@ -85,11 +86,12 @@ class SlaRiskIntegrationTest {
         SlaRiskCalculator realCalc = new SlaRiskCalculator(queueEntryMapper, customerMapper,
                 agentMapper, redisService, properties);
         QueueReorderService reorderService = new QueueReorderService(
-                queueEntryMapper, auditLogMapper, redisService, realCalc, messageQueue);
+                queueEntryMapper, auditLogMapper, redisService, realCalc, messageQueue, sessionMapper);
 
         // VIP jump first
         vipEntry.setPriorityScore(50);
         when(queueEntryMapper.selectBySessionId(1L)).thenReturn(vipEntry);
+        when(sessionMapper.selectStatus(1L)).thenReturn("WAITING");
         reorderService.applyVipJump(1L, 3, "system");
 
         verify(queueEntryMapper).updatePriorityScore(1L, 80); // 50 + 30
@@ -126,7 +128,8 @@ class SlaRiskIntegrationTest {
     @Test @DisplayName("多技能组降级: 两个组同时降级")
     void doubleDegradation() {
         SkillGroupDegradationService degradationSvc = new SkillGroupDegradationService(
-                queueEntryMapper, agentMapper, auditLogMapper, redisService, messageQueue, properties);
+                queueEntryMapper, agentMapper, auditLogMapper, redisService, messageQueue,
+                properties, sessionMapper);
 
         when(agentMapper.selectBySkillGroupId(1L)).thenReturn(Collections.emptyList());
         when(agentMapper.selectBySkillGroupId(2L)).thenReturn(Collections.emptyList());
@@ -134,8 +137,8 @@ class SlaRiskIntegrationTest {
         QueueEntry e2 = qe(2L, 2L, 200L);
         when(queueEntryMapper.selectBySkillGroupId(1L)).thenReturn(List.of(e1));
         when(queueEntryMapper.selectBySkillGroupId(2L)).thenReturn(List.of(e2));
-        when(queueEntryMapper.batchUpdateSkillGroup(1L, 99L)).thenReturn(1);
-        when(queueEntryMapper.batchUpdateSkillGroup(2L, 99L)).thenReturn(1);
+        when(sessionMapper.selectStatus(1L)).thenReturn("WAITING");
+        when(sessionMapper.selectStatus(2L)).thenReturn("WAITING");
 
         boolean r1 = degradationSvc.checkAndDegrade(1L);
         boolean r2 = degradationSvc.checkAndDegrade(2L);

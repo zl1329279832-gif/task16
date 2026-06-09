@@ -4,6 +4,7 @@ import com.cs.alloc.domain.QueueEntry;
 import com.cs.alloc.domain.QueueSnapshot;
 import com.cs.alloc.domain.SlaRiskScore;
 import com.cs.alloc.mapper.QueueEntryMapper;
+import com.cs.alloc.mapper.SessionMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,17 +28,19 @@ class QueueSnapshotServiceTest {
     @Mock private QueueEntryMapper queueEntryMapper;
     @Mock private RedisService redisService;
     @Mock private SlaRiskCalculator slaRiskCalculator;
+    @Mock private SessionMapper sessionMapper;
     private QueueSnapshotService service;
 
     @BeforeEach
     void setUp() {
-        service = new QueueSnapshotService(queueEntryMapper, redisService, slaRiskCalculator);
+        service = new QueueSnapshotService(queueEntryMapper, redisService, slaRiskCalculator, sessionMapper);
     }
 
     @Test @DisplayName("保存快照到Redis")
     void saveSnapshot() {
         QueueEntry e1 = qe(1L, 1L);
         when(queueEntryMapper.selectBySkillGroupId(1L)).thenReturn(List.of(e1));
+        when(sessionMapper.selectStatus(1L)).thenReturn("WAITING");
         when(slaRiskCalculator.calculateSkillGroupRisks(1L)).thenReturn(Map.of(1L, risk(1L, 50.0)));
 
         QueueSnapshot snapshot = service.saveSnapshot(1L, Duration.ofSeconds(300));
@@ -79,6 +82,7 @@ class QueueSnapshotServiceTest {
             when(redisService.getQueueSnapshot(1L)).thenReturn(Optional.of(mapper.writeValueAsString(snap)));
         } catch (Exception e) { throw new RuntimeException(e); }
         when(queueEntryMapper.selectBySessionId(1L)).thenReturn(e1);
+        when(sessionMapper.selectStatus(1L)).thenReturn("WAITING");
 
         int recovered = service.recoverFromSnapshot(1L);
         assertThat(recovered).isEqualTo(1);

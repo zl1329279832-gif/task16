@@ -6,6 +6,7 @@ import com.cs.alloc.domain.QueueEntry;
 import com.cs.alloc.domain.SlaRiskScore;
 import com.cs.alloc.mapper.AuditLogMapper;
 import com.cs.alloc.mapper.QueueEntryMapper;
+import com.cs.alloc.mapper.SessionMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,10 +24,12 @@ public class QueueReorderService {
     private final RedisService redisService;
     private final SlaRiskCalculator slaRiskCalculator;
     private final MessageQueue messageQueue;
+    private final SessionMapper sessionMapper;
 
     /**
      * 按风险评分重排指定技能组的队列。
      * 只影响 WAITING 状态的排队条目，不破坏已接入会话。
+     * 在重排前逐条校验 session 状态，跳过 ASSIGNED/ACTIVE/TRANSFERRING/SUSPENDED/CLOSED。
      */
     @Transactional
     public boolean reorderQueueByRisk(long skillGroupId) {
@@ -37,7 +40,32 @@ public class QueueReorderService {
             return false;
         }
         try {
-            Map<Long, SlaRiskScore> riskScores = slaRiskCalculator.calculateSkillGroupRisks(skillGroupId);
+            Map<Long, SlaRiskScore> allRiskScores = slaRiskCalculator.calculateSkillGroupRisks(skillGroupId);
+            if (allRiskScores.isEmpty()) return false;
+
+            // Create mutable copy for filtering
+            Map<Long, SlaRiskScore> riskScores = new LinkedHashMap<>(allRiskScores);
+
+            // Filter: only reorder sessions that are still WAITING
+            List<Long> skippedSessionIds = new ArrayList<>();
+            riskScores.entrySet().removeIf(e -> {
+                String status = sessionMapper.selectStatus(e.getKey());
+                if (!"WAITING".equals(status)) {
+                    skippedSessionIds.add(e.getKey());
+                    return true;
+                }
+                return false;
+            });
+
+            if (!skippedSessionIds.isEmpty()) {
+                log.info("技能组 {} 重排跳过 {} 个非WAITING会话: {}",
+                        skillGroupId, skippedSessionIds.size(), skippedSessionIds);
+                // Audit: record skipped sessions for traceability
+                audit("SYSTEM", "SYSTEM", "REORDER_SKIP_NON_WAITING", "SKILL_GROUP",
+                        String.valueOf(skillGroupId),
+                        String.format("跳过%d个非WAITING会话: %s", skippedSessionIds.size(), skippedSessionIds));
+            }
+
             if (riskScores.isEmpty()) return false;
 
             // Sort by risk score descending (highest risk first)
@@ -59,15 +87,16 @@ public class QueueReorderService {
 
             // Publish reorder event
             messageQueue.publish(MessageQueue.Topics.QUEUE_REORDERED,
-                    String.format("{\"skillGroupId\":%d,\"count\":%d,\"timestamp\":%d}",
-                            skillGroupId, sorted.size(), System.currentTimeMillis()));
+                    String.format("{\"skillGroupId\":%d,\"count\":%d,\"skipped\":%d,\"timestamp\":%d}",
+                            skillGroupId, sorted.size(), skippedSessionIds.size(), System.currentTimeMillis()));
 
             // Audit log
             audit("SYSTEM", "SYSTEM", "QUEUE_REORDER", "SKILL_GROUP",
                     String.valueOf(skillGroupId),
-                    String.format("按风险评分重排队列, 共%d个会话", sorted.size()));
+                    String.format("按风险评分重排队列, 共%d个会话, 跳过%d个非WAITING",
+                            sorted.size(), skippedSessionIds.size()));
 
-            log.info("技能组 {} 队列重排完成, {} 个会话", skillGroupId, sorted.size());
+            log.info("技能组 {} 队列重排完成, {} 个会话, 跳过 {} 个", skillGroupId, sorted.size(), skippedSessionIds.size());
             return true;
         } finally {
             redisService.unlock(lockKey, lockOwner);
@@ -76,11 +105,18 @@ public class QueueReorderService {
 
     /**
      * 人工置顶: 将指定会话固定在队列最前面。
+     * 仅允许 WAITING 状态的会话置顶。
      */
     @Transactional
     public void pinSession(long sessionId, String operatorId) {
         QueueEntry entry = queueEntryMapper.selectBySessionId(sessionId);
         if (entry == null) throw new BizException("会话不在排队中");
+
+        // Validate session is still WAITING before pinning
+        String status = sessionMapper.selectStatus(sessionId);
+        if (!"WAITING".equals(status)) {
+            throw new BizException("会话状态为" + status + ", 仅WAITING状态可置顶");
+        }
 
         queueEntryMapper.updatePinned(sessionId, true);
         queueEntryMapper.updatePriorityScore(sessionId, Integer.MAX_VALUE);
@@ -94,11 +130,18 @@ public class QueueReorderService {
 
     /**
      * 取消置顶。
+     * 仅允许 WAITING 状态的会话取消置顶。
      */
     @Transactional
     public void unpinSession(long sessionId, String operatorId) {
         QueueEntry entry = queueEntryMapper.selectBySessionId(sessionId);
         if (entry == null) throw new BizException("会话不在排队中");
+
+        // Validate session is still WAITING
+        String status = sessionMapper.selectStatus(sessionId);
+        if (!"WAITING".equals(status)) {
+            throw new BizException("会话状态为" + status + ", 仅WAITING状态可取消置顶");
+        }
 
         queueEntryMapper.updatePinned(sessionId, false);
         redisService.clearPinnedFlag(sessionId);
@@ -110,11 +153,18 @@ public class QueueReorderService {
 
     /**
      * VIP 插队: 为 VIP 客户一次性增加优先级分数。
+     * 仅允许 WAITING 状态的会话执行 VIP 插队。
      */
     @Transactional
     public void applyVipJump(long sessionId, int vipLevel, String operatorId) {
         QueueEntry entry = queueEntryMapper.selectBySessionId(sessionId);
         if (entry == null) throw new BizException("会话不在排队中");
+
+        // Validate session is still WAITING
+        String status = sessionMapper.selectStatus(sessionId);
+        if (!"WAITING".equals(status)) {
+            throw new BizException("会话状态为" + status + ", 仅WAITING状态可VIP插队");
+        }
 
         int bonus = vipLevel * 10;
         int newScore = (entry.getPriorityScore() != null ? entry.getPriorityScore() : 0) + bonus;

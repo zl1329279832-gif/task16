@@ -13,6 +13,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -37,10 +38,14 @@ public class SlaRiskEngine {
      * SLA 风险引擎主循环:
      * 1. 遍历所有活跃技能组
      * 2. 计算风险评分
-     * 3. 超过阈值则重排队列
-     * 4. 检查降级条件
-     * 5. 定期保存快照
-     * 6. 推送风险变化到 WebSocket
+     * 3. 保存风险历史到 DB (先于 WS 推送, 保证 DB 有记录)
+     * 4. 超过阈值则重排队列
+     * 5. 检查降级条件
+     * 6. 定期保存快照
+     * 7. 推送风险变化到 WebSocket (携带与 DB 一致的逐会话风险数据)
+     *
+     * 事件顺序保证: DB insert → MQ publish → WS push, 避免推送的风险数据与
+     * SlaRiskHistory 不一致。
      */
     @Scheduled(fixedDelayString = "${cs.sla.interval-ms:5000}")
     public void runSlaCycle() {
@@ -48,6 +53,8 @@ public class SlaRiskEngine {
         if (groups.isEmpty()) return;
 
         boolean hasCritical = false;
+        // Collect per-session risk data for consistent WS push
+        List<String> sessionRiskDetails = new ArrayList<>();
 
         for (SkillGroup group : groups) {
             long groupId = group.getId();
@@ -61,13 +68,7 @@ public class SlaRiskEngine {
                         .anyMatch(r -> r.getRiskScore() != Double.MAX_VALUE
                                 && r.getRiskScore() >= properties.getRiskThreshold());
 
-                // 3. Reorder if high risk
-                if (highRisk) {
-                    queueReorderService.reorderQueueByRisk(groupId);
-                    hasCritical = true;
-                }
-
-                // 4. Save risk history
+                // 3. Save risk history FIRST (before MQ publish, so DB has the data)
                 for (SlaRiskScore risk : riskScores.values()) {
                     if (risk.getRiskScore() == Double.MAX_VALUE) continue; // skip pinned
                     SlaRiskHistory history = new SlaRiskHistory();
@@ -80,6 +81,17 @@ public class SlaRiskEngine {
                     history.setAvgAgentLoad(risk.getAvgAgentLoad());
                     history.setCalculatedAt(risk.getCalculatedAt());
                     slaRiskHistoryMapper.insert(history);
+
+                    // Collect per-session risk detail for WS push
+                    sessionRiskDetails.add(String.format(
+                            "{\"sessionId\":%d,\"skillGroupId\":%d,\"riskScore\":%.1f,\"vipLevel\":%d}",
+                            risk.getSessionId(), groupId, risk.getRiskScore(), risk.getVipLevel()));
+                }
+
+                // 4. Reorder if high risk (after history is persisted)
+                if (highRisk) {
+                    queueReorderService.reorderQueueByRisk(groupId);
+                    hasCritical = true;
                 }
 
                 // 5. Check degradation
@@ -105,12 +117,16 @@ public class SlaRiskEngine {
         }
 
         // 7. Push risk updates via MQ -> WebSocket
+        // Include per-session risk data so WS push is consistent with SlaRiskHistory
+        String riskDetailsJson = String.join(",", sessionRiskDetails);
         if (hasCritical) {
             messageQueue.publish(MessageQueue.Topics.SLA_RISK_UPDATED,
-                    String.format("{\"criticalAlert\":true,\"timestamp\":%d}", System.currentTimeMillis()));
+                    String.format("{\"criticalAlert\":true,\"sessionRisks\":[%s],\"timestamp\":%d}",
+                            riskDetailsJson, System.currentTimeMillis()));
         } else {
             messageQueue.publish(MessageQueue.Topics.SLA_RISK_UPDATED,
-                    String.format("{\"criticalAlert\":false,\"timestamp\":%d}", System.currentTimeMillis()));
+                    String.format("{\"criticalAlert\":false,\"sessionRisks\":[%s],\"timestamp\":%d}",
+                            riskDetailsJson, System.currentTimeMillis()));
         }
     }
 }

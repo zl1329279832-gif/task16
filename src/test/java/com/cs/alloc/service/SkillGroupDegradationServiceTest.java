@@ -7,6 +7,7 @@ import com.cs.alloc.domain.QueueEntry;
 import com.cs.alloc.mapper.AgentMapper;
 import com.cs.alloc.mapper.AuditLogMapper;
 import com.cs.alloc.mapper.QueueEntryMapper;
+import com.cs.alloc.mapper.SessionMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ class SkillGroupDegradationServiceTest {
     @Mock private AuditLogMapper auditLogMapper;
     @Mock private RedisService redisService;
     @Mock private MessageQueue messageQueue;
+    @Mock private SessionMapper sessionMapper;
     private SlaRiskProperties properties;
     private SkillGroupDegradationService service;
 
@@ -37,7 +39,7 @@ class SkillGroupDegradationServiceTest {
         properties.setDegradationTimeoutSeconds(0); // immediate for testing
         properties.setFallbackSkillGroups(Map.of(1L, 99L));
         service = new SkillGroupDegradationService(queueEntryMapper, agentMapper, auditLogMapper,
-                redisService, messageQueue, properties);
+                redisService, messageQueue, properties, sessionMapper);
     }
 
     @Test @DisplayName("无可用客服超过阈值触发降级")
@@ -46,11 +48,12 @@ class SkillGroupDegradationServiceTest {
         QueueEntry e1 = qe(1L, 1L);
         QueueEntry e2 = qe(2L, 1L);
         when(queueEntryMapper.selectBySkillGroupId(1L)).thenReturn(List.of(e1, e2));
-        when(queueEntryMapper.batchUpdateSkillGroup(1L, 99L)).thenReturn(2);
+        when(sessionMapper.selectStatus(1L)).thenReturn("WAITING");
+        when(sessionMapper.selectStatus(2L)).thenReturn("WAITING");
 
         boolean result = service.checkAndDegrade(1L);
         assertThat(result).isTrue();
-        verify(queueEntryMapper).batchUpdateSkillGroup(1L, 99L);
+        verify(queueEntryMapper, times(2)).updateSkillGroupId(anyLong(), eq(99L), eq(1L));
         verify(redisService, times(2)).removeFromQueue(eq(1L), anyLong());
         verify(redisService, times(2)).addToQueue(eq(99L), anyLong(), anyDouble());
         verify(messageQueue).publish(eq(MessageQueue.Topics.SKILLGROUP_DEGRADED), anyString());
@@ -81,11 +84,11 @@ class SkillGroupDegradationServiceTest {
         when(agentMapper.selectBySkillGroupId(1L)).thenReturn(Collections.emptyList());
         QueueEntry e1 = qe(1L, 1L);
         when(queueEntryMapper.selectBySkillGroupId(1L)).thenReturn(List.of(e1));
-        when(queueEntryMapper.batchUpdateSkillGroup(1L, 99L)).thenReturn(1);
+        when(sessionMapper.selectStatus(1L)).thenReturn("WAITING");
 
         service.checkAndDegrade(1L);
-        // batchUpdateSkillGroup sets original_skill_group_id = COALESCE(original_skill_group_id, skill_group_id)
-        verify(queueEntryMapper).batchUpdateSkillGroup(1L, 99L);
+        // updateSkillGroupId sets original_skill_group_id
+        verify(queueEntryMapper).updateSkillGroupId(1L, 99L, 1L);
     }
 
     @Test @DisplayName("恢复: 迁回原技能组")
@@ -95,6 +98,8 @@ class SkillGroupDegradationServiceTest {
         QueueEntry e2 = qe(2L, 99L);
         e2.setOriginalSkillGroupId(1L);
         when(queueEntryMapper.selectByOriginalSkillGroupId(1L)).thenReturn(List.of(e1, e2));
+        when(sessionMapper.selectStatus(1L)).thenReturn("WAITING");
+        when(sessionMapper.selectStatus(2L)).thenReturn("WAITING");
 
         boolean result = service.restore(1L);
         assertThat(result).isTrue();

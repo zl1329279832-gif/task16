@@ -19,4 +19,5 @@ public interface SessionMapper {
     void updateSkillGroupId(@Param("id") Long id, @Param("skillGroupId") Long skillGroupId);
     void close(@Param("id") Long id);
     int countActiveByAgentId(@Param("agentId") Long agentId);
+    String selectStatus(@Param("id") Long id);
 }

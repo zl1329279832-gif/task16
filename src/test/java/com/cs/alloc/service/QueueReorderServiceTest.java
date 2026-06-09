@@ -6,6 +6,7 @@ import com.cs.alloc.domain.QueueEntry;
 import com.cs.alloc.domain.SlaRiskScore;
 import com.cs.alloc.mapper.AuditLogMapper;
 import com.cs.alloc.mapper.QueueEntryMapper;
+import com.cs.alloc.mapper.SessionMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,11 +28,13 @@ class QueueReorderServiceTest {
     @Mock private RedisService redisService;
     @Mock private SlaRiskCalculator slaRiskCalculator;
     @Mock private MessageQueue messageQueue;
+    @Mock private SessionMapper sessionMapper;
     private QueueReorderService service;
 
     @BeforeEach
     void setUp() {
-        service = new QueueReorderService(queueEntryMapper, auditLogMapper, redisService, slaRiskCalculator, messageQueue);
+        service = new QueueReorderService(queueEntryMapper, auditLogMapper, redisService,
+                slaRiskCalculator, messageQueue, sessionMapper);
     }
 
     @Test @DisplayName("按风险评分降序重排队列")
@@ -42,6 +45,7 @@ class QueueReorderServiceTest {
         scores.put(2L, risk(2L, 90.0));
         scores.put(3L, risk(3L, 30.0));
         when(slaRiskCalculator.calculateSkillGroupRisks(1L)).thenReturn(scores);
+        when(sessionMapper.selectStatus(anyLong())).thenReturn("WAITING");
 
         boolean result = service.reorderQueueByRisk(1L);
         assertThat(result).isTrue();
@@ -49,7 +53,7 @@ class QueueReorderServiceTest {
         verify(queueEntryMapper).updatePosition(eq(2L), eq(1));
         verify(queueEntryMapper).updatePosition(eq(1L), eq(2));
         verify(queueEntryMapper).updatePosition(eq(3L), eq(3));
-        verify(auditLogMapper).insert(any(AuditLog.class));
+        verify(auditLogMapper).insert(argThat(a -> "QUEUE_REORDER".equals(a.getAction())));
         verify(messageQueue).publish(eq(MessageQueue.Topics.QUEUE_REORDERED), anyString());
     }
 
@@ -76,6 +80,7 @@ class QueueReorderServiceTest {
     void pinSession() {
         QueueEntry entry = qe(1L, 1L);
         when(queueEntryMapper.selectBySessionId(1L)).thenReturn(entry);
+        when(sessionMapper.selectStatus(1L)).thenReturn("WAITING");
 
         service.pinSession(1L, "admin");
 
@@ -90,6 +95,7 @@ class QueueReorderServiceTest {
     void unpinSession() {
         QueueEntry entry = qe(1L, 1L);
         when(queueEntryMapper.selectBySessionId(1L)).thenReturn(entry);
+        when(sessionMapper.selectStatus(1L)).thenReturn("WAITING");
 
         service.unpinSession(1L, "admin");
 
@@ -103,6 +109,7 @@ class QueueReorderServiceTest {
         QueueEntry entry = qe(1L, 1L);
         entry.setPriorityScore(50);
         when(queueEntryMapper.selectBySessionId(1L)).thenReturn(entry);
+        when(sessionMapper.selectStatus(1L)).thenReturn("WAITING");
 
         service.applyVipJump(1L, 3, "system");
 
@@ -123,6 +130,7 @@ class QueueReorderServiceTest {
         when(redisService.tryLock(anyString(), any())).thenReturn("owner1");
         Map<Long, SlaRiskScore> scores = Map.of(1L, risk(1L, 50.0));
         when(slaRiskCalculator.calculateSkillGroupRisks(1L)).thenReturn(scores);
+        when(sessionMapper.selectStatus(1L)).thenReturn("WAITING");
 
         service.reorderQueueByRisk(1L);
 

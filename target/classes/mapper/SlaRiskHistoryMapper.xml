@@ -19,4 +19,7 @@
     <delete id="deleteOlderThan">
         DELETE FROM sla_risk_history WHERE calculated_at &lt; #{olderThanSeconds}
     </delete>
+    <select id="selectLatestBySessionId" resultMap="BaseResultMap">
+        SELECT * FROM sla_risk_history WHERE session_id = #{sessionId} ORDER BY id DESC LIMIT 1
+    </select>
 </mapper>

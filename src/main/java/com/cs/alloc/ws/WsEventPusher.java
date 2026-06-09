@@ -1,7 +1,10 @@
 package com.cs.alloc.ws;
 
+import com.cs.alloc.domain.SlaRiskHistory;
+import com.cs.alloc.mapper.SlaRiskHistoryMapper;
 import com.cs.alloc.service.MessageQueue;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -15,10 +18,12 @@ import java.util.concurrent.CopyOnWriteArraySet;
 
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class WsEventPusher {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private final Map<String, Set<WebSocketSession>> customerSessions = new ConcurrentHashMap<>();
     private final Map<String, Set<WebSocketSession>> agentSessions = new ConcurrentHashMap<>();
+    private final SlaRiskHistoryMapper slaRiskHistoryMapper;
 
     public void registerCustomer(String customerId, WebSocketSession session) {
         customerSessions.computeIfAbsent(customerId, k -> new CopyOnWriteArraySet<>()).add(session);
@@ -42,7 +47,7 @@ public class WsEventPusher {
         sessions.add(newSession);
     }
     public boolean isCustomerConnected(String customerId) {
-        Set<WebSocketSession> set = customerSessions.get(customerId);
+        Set<WebSocketSession> set = customerSessions.get(String.valueOf(customerId));
         return set != null && !set.isEmpty();
     }
     public void registerAgent(String agentId, WebSocketSession session) {
@@ -53,7 +58,7 @@ public class WsEventPusher {
         if (set != null) set.remove(session);
     }
     public boolean isAgentConnected(String agentId) {
-        Set<WebSocketSession> set = agentSessions.get(agentId);
+        Set<WebSocketSession> set = agentSessions.get(String.valueOf(agentId));
         return set != null && !set.isEmpty();
     }
 
@@ -82,6 +87,51 @@ public class WsEventPusher {
     }
     public void pushDegradationRestored(long skillGroupId, Map<String, Object> data) {
         broadcastToAgents("skillgroup.restored", data);
+    }
+
+    /**
+     * 校验 WS 推送的风险数据与 SlaRiskHistory DB 记录是否一致。
+     * 对推送数据中每个 session 的 riskScore，查询 DB 最新记录比对。
+     * 如果不一致则记录告警日志，但不阻止推送（推送数据来自引擎，是权威来源）。
+     *
+     * @param pushedData 从 MQ 接收到的风险推送数据
+     * @return true 如果所有 session 的风险与 DB 一致，或无法校验
+     */
+    public boolean validateRiskConsistency(Map<String, Object> pushedData) {
+        Object sessionRisksObj = pushedData.get("sessionRisks");
+        if (sessionRisksObj == null) return true;
+
+        if (sessionRisksObj instanceof java.util.List<?> sessionRisks) {
+            boolean allConsistent = true;
+            for (Object item : sessionRisks) {
+                if (item instanceof Map<?, ?> riskMap) {
+                    try {
+                        Number sessionIdNum = (Number) riskMap.get("sessionId");
+                        Number pushedScoreNum = (Number) riskMap.get("riskScore");
+                        if (sessionIdNum == null || pushedScoreNum == null) continue;
+
+                        long sessionId = sessionIdNum.longValue();
+                        double pushedScore = pushedScoreNum.doubleValue();
+
+                        // Query latest risk history for this session from DB
+                        SlaRiskHistory latest = slaRiskHistoryMapper.selectLatestBySessionId(sessionId);
+                        if (latest != null) {
+                            double dbScore = latest.getRiskScore();
+                            // Allow small floating-point tolerance
+                            if (Math.abs(pushedScore - dbScore) > 0.5) {
+                                log.warn("WS风险推送与DB不一致: sessionId={}, pushed={}, db={}",
+                                        sessionId, pushedScore, dbScore);
+                                allConsistent = false;
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.debug("校验风险一致性时出错, 跳过", e);
+                    }
+                }
+            }
+            return allConsistent;
+        }
+        return true;
     }
 
     private String buildMessage(String event, Map<String, Object> data) {
@@ -128,8 +178,15 @@ public class WsEventPusher {
             catch (Exception e) { log.error("SYSTEM_NOTICE事件处理失败", e); }
         });
         mq.subscribe(MessageQueue.Topics.SLA_RISK_UPDATED, msg -> {
-            try { Map<String, Object> data = MAPPER.readValue(msg, Map.class); broadcastToAgents("sla.risk.updated", data); }
-            catch (Exception e) { log.error("SLA_RISK_UPDATED事件处理失败", e); }
+            try {
+                Map<String, Object> data = MAPPER.readValue(msg, Map.class);
+                // Validate risk consistency between pushed data and DB before broadcasting
+                boolean consistent = validateRiskConsistency(data);
+                if (!consistent) {
+                    log.warn("SLA风险推送数据与DB存在不一致, 仍然推送但已记录告警");
+                }
+                broadcastToAgents("sla.risk.updated", data);
+            } catch (Exception e) { log.error("SLA_RISK_UPDATED事件处理失败", e); }
         });
         mq.subscribe(MessageQueue.Topics.QUEUE_REORDERED, msg -> {
             try { Map<String, Object> data = MAPPER.readValue(msg, Map.class); broadcastToAgents("queue.reordered", data); }
